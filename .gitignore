@@ -6,3 +6,5 @@ scripts/
 /*.js
 /*.d.ts
 /*.js.map
+
+sample/

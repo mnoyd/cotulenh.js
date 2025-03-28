@@ -1,15 +1,23 @@
 {
-  "name": "commander-chess",
+  "name": "cotulenh.js",
   "version": "1.0.0",
   "description": "A Javascript library for managing commander chess game",
-  "main": "index.js",
+  "license": "BSD-2-Clause",
+  "main": "dist/cjs/cotulenh.js",
+  "module": "dist/esm/cotulenh.js",
+  "types": "dist/types/cotulenh.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "prepare": "npm run build",
+    "build": "tsc -b ./tsconfig.cjs.json ./tsconfig.esm.json ./tsconfig.types.json",
+    "check": "npm run format:check && npm run lint && npm run test && npm run build",
+    "clean": "rm -rf ./dist",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "author": "Hoang Manh",
-  "license": "ISC",
   "devDependencies": {
     "@types/node": "^22.13.11",
+    "prettier": "^3.5.3",
     "typescript": "^5.8.2"
   }
 }
