@@ -35,8 +35,8 @@ function scenario1_LandCapturesNavyAtSea() {
   const game = new CoTuLenh()
   game.clear()
   game.put({ type: TANK, color: RED }, 'd4')
-  game.put({ type: NAVY, color: BLUE }, 'd2') // d2 is sea
-  game.put({ type: COMMANDER, color: RED }, 'a12') // Add commanders to avoid game over check issues
+  game.put({ type: NAVY, color: BLUE }, 'b4') // b4 is sea
+  game.put({ type: COMMANDER, color: RED }, 'f12') // Add commanders to avoid game over check issues
   game.put({ type: COMMANDER, color: BLUE }, 'k1')
   game.load(game.fen().replace(/\s+[wb]\s+/, ` ${RED} `)) // Set turn to Red
 
@@ -74,9 +74,9 @@ function scenario2_NavyCapturesLandNotCoast() {
   )
   const game = new CoTuLenh()
   game.clear()
-  game.put({ type: NAVY, color: RED }, 'f2') // f2 is sea
+  game.put({ type: NAVY, color: RED }, 'c5') // c5 is coast
   game.put({ type: INFANTRY, color: BLUE }, 'f5') // f5 is normal land
-  game.put({ type: COMMANDER, color: RED }, 'a12')
+  game.put({ type: COMMANDER, color: RED }, 'f12')
   game.put({ type: COMMANDER, color: BLUE }, 'k1')
   game.load(game.fen().replace(/\s+[wb]\s+/, ` ${RED} `))
 

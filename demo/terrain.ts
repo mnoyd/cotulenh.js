@@ -2,7 +2,7 @@ import { CoTuLenh } from '../src/cotulenh';
 
 console.log('Cotulenh Terrain Zones Demonstration\n');
 const game = new CoTuLenh();
-game.printTerrainZones();
+// game.printTerrainZones();
 
 console.log('\nNote:');
 console.log('- Water zones: Naval units can station here');
