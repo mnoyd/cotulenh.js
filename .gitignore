@@ -8,3 +8,4 @@ scripts/
 /*.js.map
 
 sample/
+coverage/

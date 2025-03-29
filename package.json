@@ -12,12 +12,16 @@
     "check": "npm run format:check && npm run lint && npm run test && npm run build",
     "clean": "rm -rf ./dist",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "jest"
   },
   "author": "Hoang Manh",
   "devDependencies": {
+    "@types/jest": "^29.5.14",
     "@types/node": "^22.13.11",
+    "jest": "^29.7.0",
     "prettier": "^3.5.3",
+    "ts-jest": "^29.3.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.2"
