@@ -754,49 +754,43 @@ export class CoTuLenh {
                 }
 
                 if (captureAllowed) {
-                  const targetIsNavy = targetPiece.type === NAVY;
-                  const targetIsLandPiece = LAND_MASK[to] && !targetIsNavy; // Target is on land and not Navy
-                  const targetOnNavyMask = NAVY_MASK[to];
-                  const targetOnLandMask = LAND_MASK[to];
-                  const attackerIsLandPiece = LAND_MASK[from] && pieceType !== AIR_FORCE && pieceType !== NAVY; // Piece starting on land (not AF/Navy)
+                  // --- Simplified Stay Capture Logic ---
+                  let targetSquareIsValidForAttacker = false;
 
-                  // --- Specific Stay Capture Rules (using masks) ---
-                  if (attackerIsLandPiece && targetIsNavy && !targetOnLandMask) {
-                     // Land piece capturing Navy on pure water (not land): MUST stay capture
-                     addStayCapture = true;
-                     addNormalCapture = false;
-                  } else if (pieceType === NAVY) {
-                     const navyCaptureRange = isHero ? 5 : 4; // Range vs other Navy
-                     const LCaptureRange = isHero ? 4 : 3;    // Range vs Land pieces
+                  if (pieceType === NAVY) {
+                    // Navy can only exist on NAVY_MASK squares
+                    targetSquareIsValidForAttacker = NAVY_MASK[to] === 1;
+                    // Apply Navy-specific capture ranges (overrides general captureRange)
+                    const targetIsNavy = targetPiece.type === NAVY;
+                    const navyCaptureRange = isHero ? 5 : 4;
+                    const LCaptureRange = isHero ? 4 : 3;
+                    if (targetIsNavy && currentRange > navyCaptureRange) captureAllowed = false;
+                    if (!targetIsNavy && currentRange > LCaptureRange) captureAllowed = false; // Target is Land/Air
 
-                     // Check Navy-specific capture ranges
-                     if (targetIsNavy && currentRange > navyCaptureRange) captureAllowed = false;
-                     if (targetIsLandPiece && currentRange > LCaptureRange) captureAllowed = false;
-
-                     if (captureAllowed && targetIsLandPiece && targetOnLandMask && !targetOnNavyMask) {
-                       // Navy capturing Land piece on pure Land square: CAN stay capture
-                       addStayCapture = true;
-                       // Normal capture is still possible
-                     } else if (captureAllowed && targetIsLandPiece && targetOnLandMask && targetOnNavyMask) {
-                       // Navy capturing Land piece on mixed square (C file/banks): MUST replace
-                       addStayCapture = false;
-                     }
-                     // Navy capturing Navy always replaces (addStayCapture remains false)
-                  } else if (pieceType === AIR_FORCE) {
-                     if (targetIsNavy && !targetOnLandMask) {
-                       // Air Force capturing Navy on pure water: MUST stay capture
-                       addStayCapture = true;
-                       addNormalCapture = false;
-                     } else {
-                       // Air Force capturing anything else (Land piece or Navy on mixed): CAN choose stay or replace
-                       addStayCapture = true;
-                       addNormalCapture = true;
-                     }
+                  } else {
+                    // All other pieces (Land, Air, Heavy) require LAND_MASK squares
+                    targetSquareIsValidForAttacker = LAND_MASK[to] === 1;
                   }
-                  // Other pieces (Land capturing Land) always replace
+
+                  // Determine capture type based on target square validity
+                  if (captureAllowed) {
+                    if (targetSquareIsValidForAttacker) {
+                      // Target square is valid terrain -> Replace Capture
+                      addNormalCapture = true;
+                      addStayCapture = false;
+                    } else {
+                      // Target square is invalid terrain -> Stay Capture
+                      addNormalCapture = false;
+                      addStayCapture = true;
+                    }
+                  } else {
+                      // Capture not allowed (e.g. out of range for Navy specific target)
+                      addNormalCapture = false;
+                      addStayCapture = false;
+                  }
 
                   // Add moves based on flags
-                  if (addNormalCapture) {
+                  if (addNormalCapture) { // Will only be true if captureAllowed is true
                     addMove(
                       moves,
                       us,
