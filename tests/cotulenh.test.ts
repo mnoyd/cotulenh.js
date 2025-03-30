@@ -76,7 +76,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Navy at b3, Blue Navy at b5, Red to move
     game.load('11/11/11/11/11/11/11/1n9/11/1N9/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     const captureMove = findMove(moves, 'b3', 'b5', false); // Expect normal capture
 
     expect(captureMove).toBeDefined();
@@ -91,7 +91,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Navy at c4, Blue Tank at c5, Red to move
     game.load('11/11/11/11/11/11/11/2t8/2N8/11/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     const captureMove = findMove(moves, 'c4', 'c5', false); // Expect normal capture
 
     expect(captureMove).toBeDefined();
@@ -106,7 +106,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Tank at c2, Blue Navy at b2, Red to move
     game.load('11/11/11/11/11/11/11/11/11/1n1T7/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety:true }) as Move[];
     const captureMove = findMove(moves, 'c2', 'b2', true); // Expect stay capture
 
     expect(captureMove).toBeDefined();
@@ -119,9 +119,9 @@ describe('CoTuLenh Stay Capture Logic', () => {
 
   test('Navy capturing Land piece on pure Land should STAY', () => {
     // FEN: Red Navy at c3, Blue Tank at d3, Red to move
-    game.load('11/11/11/11/11/11/11/11/2Nt/11/11/11 r - - 0 1');
+    game.load('11/11/11/11/11/11/11/11/2N3t4/11/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     // Navy capture range vs Land is 3 (or 4 if heroic)
     const captureMove = findMove(moves, 'c3', 'd3', true); // Expect stay capture
 
@@ -148,7 +148,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Air Force at c2, Blue Navy at b2, Red to move
     game.load('11/11/11/11/11/11/11/11/11/1n1F7/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety:true }) as Move[];
     const captureMove = findMove(moves, 'c2', 'b2', true); // Expect stay capture
 
     expect(captureMove).toBeDefined();
@@ -163,7 +163,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Air Force at d4, Blue Infantry at d5, Red to move
     game.load('11/11/11/11/11/11/11/3i7/3F7/11/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     const captureMove = findMove(moves, 'd4', 'd5', false); // Expect normal capture
 
     expect(captureMove).toBeDefined();
