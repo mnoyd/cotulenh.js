@@ -56,9 +56,9 @@ const findMove = (
 function demoSpecificMovements(){
   const game = new CoTuLenh();
   game.clear();
-  game.load('11/11/11/11/8i2/11/11/8A2/11/11/11/11 r - - 0 1');
+  game.load('11/11/11/11/11/11/5+F5/11/11/11/1n1F7/11 r - - 0 1');
 
-  attemptMove(game, 'i5', 'i8');
+  attemptMove(game, 'd2', 'b2');
 }
 
 // Run the demo

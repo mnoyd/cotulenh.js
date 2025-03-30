@@ -107,30 +107,30 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game.load('11/11/11/11/11/11/11/11/11/1n1T7/11/11 r - - 0 1');
 
     const moves = game.moves({ verbose: true, ignoreSafety:true }) as Move[];
-    const captureMove = findMove(moves, 'c2', 'b2', true); // Expect stay capture
+    const captureMove = findMove(moves, 'd3', 'b3', true); // Expect stay capture
 
     expect(captureMove).toBeDefined();
     expect(captureMove?.isStayCapture()).toBe(true);
-    expect(captureMove?.from).toBe('c2');
-    expect(captureMove?.to).toBe('c2'); // Tank stays at c2
+    expect(captureMove?.from).toBe('d3');
+    expect(captureMove?.to).toBe('d3'); // Tank stays at c2
     expect(captureMove?.captured).toBe(NAVY);
-    expect(captureMove?.targetSquare).toBe('b2'); // Target was b2
+    expect(captureMove?.targetSquare).toBe('b3'); // Target was b2
   });
 
   test('Navy capturing Land piece on pure Land should STAY', () => {
     // FEN: Red Navy at c3, Blue Tank at d3, Red to move
-    game.load('11/11/11/11/11/11/11/11/2N3t4/11/11/11 r - - 0 1');
+    game.load('11/11/11/11/11/11/11/11/11/2N2t5/11/11 r - - 0 1');
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     // Navy capture range vs Land is 3 (or 4 if heroic)
-    const captureMove = findMove(moves, 'c3', 'd3', true); // Expect stay capture
+    const captureMove = findMove(moves, 'c3', 'f3', true); // Expect stay capture
 
     expect(captureMove).toBeDefined();
     expect(captureMove?.isStayCapture()).toBe(true);
     expect(captureMove?.from).toBe('c3');
     expect(captureMove?.to).toBe('c3'); // Navy stays at c3
     expect(captureMove?.captured).toBe(TANK);
-    expect(captureMove?.targetSquare).toBe('d3'); // Target was d3
+    expect(captureMove?.targetSquare).toBe('f3'); // Target was f3
   });
 
   test('Navy should NOT be able to capture Land piece out of range', () => {
@@ -146,15 +146,15 @@ describe('CoTuLenh Stay Capture Logic', () => {
 
   test('Air Force capturing Navy on pure Water should STAY', () => {
     // FEN: Red Air Force at c2, Blue Navy at b2, Red to move
-    game.load('11/11/11/11/11/11/11/11/11/1n1F7/11/11 r - - 0 1');
+    game.load('11/11/11/11/11/11/11/11/11/11/1n1F7/11 r - - 0 1');
 
     const moves = game.moves({ verbose: true, ignoreSafety:true }) as Move[];
-    const captureMove = findMove(moves, 'c2', 'b2', true); // Expect stay capture
+    const captureMove = findMove(moves, 'd2', 'b2', true); // Expect stay capture
 
     expect(captureMove).toBeDefined();
     expect(captureMove?.isStayCapture()).toBe(true);
-    expect(captureMove?.from).toBe('c2');
-    expect(captureMove?.to).toBe('c2'); // Air Force stays at c2
+    expect(captureMove?.from).toBe('d2');
+    expect(captureMove?.to).toBe('d2'); // Air Force stays at c2
     expect(captureMove?.captured).toBe(NAVY);
     expect(captureMove?.targetSquare).toBe('b2'); // Target was b2
   });

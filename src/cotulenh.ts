@@ -358,17 +358,20 @@ export class CoTuLenh {
           fileIndex += emptySquares
           currentRankSquares += emptySquares
         } else {
-          // Handle piece character
-          const color = char < 'a' ? RED : BLUE // Use RED/BLUE constants
-          let type = char.toLowerCase() as PieceSymbol
+          // Check for heroic status with '+' prefix
           let isHeroic = false
+          if (char === '+') {
+            isHeroic = true
+            i++ // Move to the next character (the actual piece)
+            if (i >= rankStr.length) {
+              throw new Error(`Invalid FEN: '+' at the end of rank ${12 - r}`)
+            }
+          }
 
-          // TODO: Define and implement FEN representation for heroic status
-          // Example: If '*' follows piece char indicates heroic
-          // if (i + 1 < rankStr.length && rankStr.charAt(i+1) === '*') {
-          //     isHeroic = true;
-          //     i++; // Consume the '*'
-          // }
+          // Handle piece character
+          const pieceChar = isHeroic ? rankStr.charAt(i) : char
+          const color = pieceChar < 'a' ? RED : BLUE // Use RED/BLUE constants
+          let type = pieceChar.toLowerCase() as PieceSymbol
 
           // TODO: Validate piece type is known
           // Use 'in' operator which works across ES versions
@@ -432,7 +435,10 @@ export class CoTuLenh {
             piece.color === RED
               ? piece.type.toUpperCase()
               : piece.type.toLowerCase()
-          // TODO: Add heroic marker if needed (e.g., char += this.isHeroic(sq) ? '*' : '')
+          // Add heroic marker with '+' prefix
+          if (this.isHeroic(sq)) {
+            char = '+' + char
+          }
           fen += char
         } else {
           empty++
@@ -601,70 +607,69 @@ export class CoTuLenh {
 
       if (!moveOffsets) continue // Should not happen if all pieces are defined
 
-       // --- Determine Movement Properties based on piece and heroic status ---
-       let moveRange = 1
-       let canMoveDiagonal = false
-       let isSliding = false
-       let captureRange = 1
-       let captureIgnoresPieceBlocking = false // Specific to blocking by other pieces
-       let moveIgnoresBlocking = false // Ignores pieces and terrain for movement
-       let captureIgnoresTerrainBlocking = true // NEW: All pieces ignore terrain for capture targeting
+      // --- Determine Movement Properties based on piece and heroic status ---
+      let moveRange = 1
+      let canMoveDiagonal = false
+      let isSliding = false
+      let captureRange = 1
+      let captureIgnoresPieceBlocking = false // Specific to blocking by other pieces
+      let moveIgnoresBlocking = false // Ignores pieces and terrain for movement
 
-       // Base ranges/abilities
-       switch (pieceType) {
-         case COMMANDER:
-           isSliding = true
-           moveRange = Infinity
-           captureRange = 1 // Special capture rule
-           canMoveDiagonal = true
-           break
-         case INFANTRY:
-         case ENGINEER:
-         case ANTI_AIR:
-           moveRange = 1
-           captureRange = 1
-           break
-         case TANK:
-           moveRange = 2
-           captureRange = 2
-           isSliding = true
-           break
-         case MILITIA:
-           moveRange = 1
-           captureRange = 1
-           canMoveDiagonal = true
-           break
-         case ARTILLERY:
-           isSliding = true
-           moveRange = 3
-           captureRange = 3
-           captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
-           canMoveDiagonal = true
-           break
-         case MISSILE:
-           isSliding = true
-           moveRange = 2 // Approximation
-           captureRange = 2 // Approximation
-           captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
-           canMoveDiagonal = true
-           break
-         case AIR_FORCE:
-           isSliding = true
-           moveRange = 4
-           captureRange = 4
-           moveIgnoresBlocking = true // Ignores piece and terrain blocking for move AND capture
-           captureIgnoresPieceBlocking = true // Explicitly ignores piece blocking for capture
-           canMoveDiagonal = true
-           break
-         case NAVY:
-           isSliding = true
-           moveRange = 4 // Base move range
-           captureRange = 4 // Default to maximum range (for torpedo attacks)
-           canMoveDiagonal = true
-           // Navy has two attack mechanisms:
-           // 1. Naval Gun: Range 3, targets land pieces
-           // 2. Torpedo: Range 4, targets other Navy pieces
-           break
+      // Base ranges/abilities
+      switch (pieceType) {
+        case COMMANDER:
+          isSliding = true
+          moveRange = Infinity
+          captureRange = 1 // Special capture rule
+          canMoveDiagonal = true
+          break
+        case INFANTRY:
+        case ENGINEER:
+        case ANTI_AIR:
+          moveRange = 1
+          captureRange = 1
+          break
+        case TANK:
+          moveRange = 2
+          captureRange = 2
+          isSliding = true
+          break
+        case MILITIA:
+          moveRange = 1
+          captureRange = 1
+          canMoveDiagonal = true
+          break
+        case ARTILLERY:
+          isSliding = true
+          moveRange = 3
+          captureRange = 3
+          captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
+          canMoveDiagonal = true
+          break
+        case MISSILE:
+          isSliding = true
+          moveRange = 2 // Approximation
+          captureRange = 2 // Approximation
+          captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
+          canMoveDiagonal = true
+          break
+        case AIR_FORCE:
+          isSliding = true
+          moveRange = 4
+          captureRange = 4
+          moveIgnoresBlocking = true // Ignores piece and terrain blocking for move AND capture
+          captureIgnoresPieceBlocking = true // Explicitly ignores piece blocking for capture
+          canMoveDiagonal = true
+          break
+        case NAVY:
+          isSliding = true
+          moveRange = 4 // Base move range
+          captureRange = 4 // Default to maximum range (for torpedo attacks)
+          canMoveDiagonal = true
+          // Navy has two attack mechanisms:
+          // 1. Naval Gun: Range 3, targets land pieces
+          // 2. Torpedo: Range 4, targets other Navy pieces
+          break
         case HEADQUARTER:
           moveRange = 0
           captureRange = 0
@@ -695,179 +700,190 @@ export class CoTuLenh {
         for (const offset of currentOffsets) {
           let currentRange = 0
           let to = from
-             let pieceBlockedMovement = false // Track if movement path is blocked by a piece
-             let terrainBlockedMovement = false // Track if movement path is blocked by terrain
+          let pieceBlockedMovement = false // Track if movement path is blocked by a piece
+          let terrainBlockedMovement = false // Track if movement path is blocked by terrain
 
-             while (true) {
-               // Loop for sliding pieces or single step
-               to += offset
-               currentRange++
+          while (true) {
+            // Loop for sliding pieces or single step
+            to += offset
+            currentRange++
 
-               if (!isSquareOnBoard(to)) break // Off the 11x12 board
-               if (currentRange > moveRange && currentRange > captureRange) break // Exceeded both move and capture range
+            if (!isSquareOnBoard(to)) break // Off the 11x12 board
+            if (currentRange > moveRange && currentRange > captureRange) break // Exceeded both move and capture range
 
-               const targetPiece = this._board[to]
-               const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(
-                 pieceType,
-               )
+            const targetPiece = this._board[to]
+            const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(
+              pieceType,
+            )
 
-                // --- Terrain Blocking Check (Movement Only) ---
-                if (!moveIgnoresBlocking) { // Rely on the flag now
-                  if (pieceType === NAVY) {
-                    // Navy can only MOVE onto NAVY_MASK squares
-                    if (!NAVY_MASK[to]) {
+            // --- Terrain Blocking Check (Movement Only) ---
+            if (!moveIgnoresBlocking) {
+              // Rely on the flag now
+              if (pieceType === NAVY) {
+                // Navy can only MOVE onto NAVY_MASK squares
+                if (!NAVY_MASK[to]) {
+                  terrainBlockedMovement = true
+                }
+              } else if (LAND_MASK[from]) {
+                // Assuming non-Navy are land pieces for this check
+                // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
+                if (!LAND_MASK[to]) {
+                  terrainBlockedMovement = true
+                }
+                // Heavy piece river crossing rule (Movement Only)
+                if (isHeavyPiece && !terrainBlockedMovement) {
+                  const zoneFrom = this.isHeavyZone(from)
+                  const zoneTo = this.isHeavyZone(to)
+                  if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
+                    const isCrossingBridge = this.isBridgeCrossing(from, to)
+                    if (!isCrossingBridge) {
+                      // Cannot cross river unless via bridge (movement)
                       terrainBlockedMovement = true
-                    }
-                  } else if (LAND_MASK[from]) { // Assuming non-Navy are land pieces for this check
-                    // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
-                    if (!LAND_MASK[to]) {
-                      terrainBlockedMovement = true
-                    }
-                    // Heavy piece river crossing rule (Movement Only)
-                    if (isHeavyPiece && !terrainBlockedMovement) {
-                      const zoneFrom = this.isHeavyZone(from)
-                      const zoneTo = this.isHeavyZone(to)
-                      if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
-                        const isCrossingBridge = this.isBridgeCrossing(from, to)
-                        if (!isCrossingBridge) {
-                          // Cannot cross river unless via bridge (movement)
-                          terrainBlockedMovement = true
-                        }
-                      }
                     }
                   }
                 }
-                // Note: Terrain blocking for *capture targeting* is ignored per rules.
+              }
+            }
+            // Note: Terrain blocking for *capture targeting* is ignored per rules.
 
-               // --- Target Square Analysis ---
-               if (targetPiece) {
-                 // --- Capture Logic ---
-                 if (targetPiece.color === them && currentRange <= captureRange) {
-                   let captureAllowed = true
-                   let addNormalCapture = true
-                   let addStayCapture = false
+            // --- Target Square Analysis ---
+            let canMoveToSquare = !terrainBlockedMovement // Assume can move unless terrain blocked
 
-                   // Commander captures only adjacent
-                   if (pieceType === COMMANDER && currentRange > 1) {
-                     captureAllowed = false
-                   }
+            if (targetPiece) {
+              // --- Capture Logic ---
+              if (targetPiece.color === them && currentRange <= captureRange) {
+                let captureAllowed = true
+                let addNormalCapture = true
+                let addStayCapture = false
 
-                   // Navy attack mechanisms & Stay Capture Rule
-                   if (pieceType === NAVY) {
-                     if (targetPiece.type === NAVY) {
-                       // Torpedo attack: Range 4 (5 if heroic)
-                       if (currentRange > (isHero ? 5 : 4)) {
-                         captureAllowed = false
-                       }
-                     } else {
-                       // Naval Gun attack: Range 3 (4 if heroic)
-                       if (currentRange > (isHero ? 4 : 3)) {
-                         captureAllowed = false
-                       }
-                       // If targeting a land piece (even across terrain), use STAY_CAPTURE
-                       if (captureAllowed && LAND_MASK[to]) {
-                         addStayCapture = true
-                         addNormalCapture = false // Don't add normal capture for this case
-                       }
-                     }
-                   }
+                // Commander captures only adjacent
+                if (pieceType === COMMANDER && currentRange > 1) {
+                  captureAllowed = false
+                }
 
-                    // Check if path is blocked by PIECES for capture
-                    if (
-                      captureAllowed &&
-                      !captureIgnoresPieceBlocking && // Check piece blocking flag
-                      pieceBlockedMovement // Check if movement path was blocked by a piece
-                    ) {
-                      // Tank special case: can capture at range 2 even if blocked at 1
-                     if (pieceType === TANK && currentRange === 2) {
-                       // Allow capture if the blocking piece was at range 1
-                       // Need to check if the *specific* blocking piece was at range 1
-                       // This requires tracking the blocking square, complex.
-                       // Simpler: Assume Tank can capture at range 2 if path was blocked earlier.
-                       captureAllowed = true
-                     } else {
-                       captureAllowed = false // Blocked by piece for capture
-                     }
-                   }
-                   // Note: Terrain blocking for capture targeting is ignored per rules.
-
-                    // NEW: Check if a normal capture would land on invalid terrain for the attacker
-                    if (captureAllowed && addNormalCapture && !moveIgnoresBlocking) { // Use flag
-                      const isTargetTerrainValidForAttacker =
-                        pieceType === NAVY ? NAVY_MASK[to] : LAND_MASK[to]
-                      if (!isTargetTerrainValidForAttacker) {
-                       // Force stay capture if target terrain is invalid for attacker's movement
-                       addNormalCapture = false
-                       addStayCapture = true
-                     }
-                   }
-
-                   if (captureAllowed) {
-                     if (addNormalCapture) {
-                       addMove(
-                         moves,
-                         us,
-                         from,
-                         to,
-                         pieceType,
-                         targetPiece.type,
-                         BITS.CAPTURE,
-                       )
-                     }
-                     if (addStayCapture) {
-                       // For stay capture, 'to' stores the *target* square
-                       addMove(
-                         moves,
-                         us,
-                         from,
-                         to, // 'to' is the target square
-                         pieceType,
-                         targetPiece.type,
-                         BITS.CAPTURE | BITS.STAY_CAPTURE,
-                       )
-                     }
-                   }
-                 } // End capture check (if targetPiece.color === them)
-
-                  // --- Piece Blocking Check (Movement) ---
-                  if (!moveIgnoresBlocking) { // Use flag
-                    // Navy ignores FRIENDLY piece blocking
-                    if (!(pieceType === NAVY && targetPiece.color === us)) {
-                      pieceBlockedMovement = true // Mark path as blocked for further movement
+                // Navy attack mechanisms & Stay Capture Rule
+                if (pieceType === NAVY) {
+                  if (targetPiece.type === NAVY) {
+                    // Torpedo attack: Range 4 (5 if heroic)
+                    if (currentRange > (isHero ? 5 : 4)) {
+                      captureAllowed = false
+                    }
+                  } else {
+                    // Naval Gun attack: Range 3 (4 if heroic)
+                    if (currentRange > (isHero ? 4 : 3)) {
+                      captureAllowed = false
                     }
                   }
+                }
 
-                 // If piece cannot capture over other pieces, stop checking this direction
-                 if (!captureIgnoresPieceBlocking && pieceType !== TANK) {
-                   // If movement is blocked by a piece, and the current piece
-                   // cannot shoot over pieces (and isn't a Tank), stop.
-                   if (pieceBlockedMovement) break
-                 }
-                 // Otherwise (can shoot over pieces or is Tank), continue checking
-                 // for captures further along the path.
-               } else {
-                 // --- Move to Empty Square Logic ---
-                 // Check movement range AND terrain/piece blocking
-                 if (
-                   currentRange <= moveRange &&
-                   !terrainBlockedMovement &&
-                   !pieceBlockedMovement
-                 ) {
-                   addMove(moves, us, from, to, pieceType)
-                 }
-               }
+                // Check if path is blocked by PIECES for capture
+                if (
+                  captureAllowed &&
+                  !captureIgnoresPieceBlocking && // Check piece blocking flag
+                  pieceBlockedMovement // Check if movement path was blocked by a piece
+                ) {
+                  // Tank special case: can capture at range 2 even if blocked at 1
+                  if (pieceType === TANK && currentRange === 2) {
+                    // Allow capture if the blocking piece was at range 1
+                    // Need to check if the *specific* blocking piece was at range 1
+                    // This requires tracking the blocking square, complex.
+                    // Simpler: Assume Tank can capture at range 2 if path was blocked earlier.
+                    captureAllowed = true
+                  } else {
+                    captureAllowed = false // Blocked by piece for capture
+                  }
+                }
+                // Note: Terrain blocking for capture targeting is ignored per rules.
 
-                // Stop checking this direction if movement is blocked by terrain or piece
-                // (unless piece ignores blocking or is checking for captures beyond)
-                if (terrainBlockedMovement && !moveIgnoresBlocking) break // Terrain block stops movement if not ignored
-                if (pieceBlockedMovement && !captureIgnoresPieceBlocking && pieceType !== TANK && !moveIgnoresBlocking) break // Piece block stops movement if cannot shoot over and not ignored
+                // NEW: Check if a normal capture would land on invalid terrain for the attacker
+                if (captureAllowed && addNormalCapture) {
+                  // Use flag
+                  const isTargetTerrainValidForAttacker =
+                    pieceType === NAVY ? NAVY_MASK[to] : LAND_MASK[to]
+                  if (!isTargetTerrainValidForAttacker) {
+                    // Force stay capture if target terrain is invalid for attacker's movement
+                    addNormalCapture = false
+                    addStayCapture = true
+                  }
+                }
 
-               // If not a sliding piece, stop after the first step
-               if (!isSliding) break
-             } // End while loop for sliding range
-           } // End for loop over offsets
-         } // End else block (non-Missile pieces)
-       } // End for loop over board squares
+                if (captureAllowed) {
+                  if (addNormalCapture) {
+                    addMove(
+                      moves,
+                      us,
+                      from,
+                      to,
+                      pieceType,
+                      targetPiece.type,
+                      BITS.CAPTURE,
+                    )
+                  }
+                  if (addStayCapture) {
+                    // For stay capture, 'to' stores the *target* square
+                    addMove(
+                      moves,
+                      us,
+                      from,
+                      to, // 'to' is the target square
+                      pieceType,
+                      targetPiece.type,
+                      BITS.CAPTURE | BITS.STAY_CAPTURE,
+                    )
+                  }
+                }
+              } // End capture check (if targetPiece.color === them)
+
+              // --- Piece Blocking Check (Movement) ---
+              if (!moveIgnoresBlocking) {
+                // Use flag
+                // Navy ignores FRIENDLY piece blocking
+                if (!(pieceType === NAVY && targetPiece.color === us)) {
+                  pieceBlockedMovement = true // Mark path as blocked for further movement
+                }
+              }
+
+              // If piece cannot capture over other pieces, stop checking this direction
+              if (!captureIgnoresPieceBlocking && pieceType !== TANK) {
+                // If movement is blocked by a piece, and the current piece
+                // cannot shoot over pieces (and isn't a Tank), stop.
+                if (pieceBlockedMovement) break
+              }
+              // Otherwise (can shoot over pieces or is Tank), continue checking
+              // for captures further along the path.
+            } else {
+              // --- Move to Empty Square Logic ---
+              // Check movement range AND terrain/piece blocking
+              if (
+                currentRange <= moveRange &&
+                canMoveToSquare && // Use the flag determined above
+                !pieceBlockedMovement
+              ) {
+                addMove(moves, us, from, to, pieceType)
+              }
+            }
+
+            // --- Loop Termination/Continuation Logic ---
+
+            // 1. Stop if not a sliding piece (already handled the single step)
+            if (!isSliding) break
+
+            // 2. Stop ONLY if path is blocked by a piece AND the current piece cannot capture over other pieces.
+            //    Terrain blocking does NOT stop the loop for sliding pieces checking for captures.
+            if (
+              pieceBlockedMovement &&
+              !captureIgnoresPieceBlocking &&
+              !moveIgnoresBlocking
+            ) {
+              break
+            }
+            // Note: Terrain blocking (`terrainBlockedMovement`) does NOT break the loop here.
+            // It only prevents adding a NORMAL move onto the blocked square.
+            // Sliding pieces continue checking subsequent squares for CAPTURES even if terrain blocks movement onto intermediate squares.
+          } // End while loop for sliding range
+        } // End for loop over offsets
+      } // End else block (non-Missile pieces)
+    } // End for loop over board squares
 
     // TODO: Implement promotion check/flagging after generating moves
     // TODO: Implement last piece auto-promotion check
@@ -941,7 +957,7 @@ export class CoTuLenh {
     } else {
       // Generate SAN strings (needs proper implementation)
       // Pass all legal moves for ambiguity resolution
-      const allLegalMoves = this._moves({ legal: true })
+      const allLegalMoves = this._moves({ legal: true, ignoreSafety })
       return internalMoves.map((move) => this._moveToSan(move, allLegalMoves))
     }
   }
@@ -1565,8 +1581,6 @@ export class CoTuLenh {
       for (const alg of ranks[dr] || []) {
         const sq = SQUARE_MAP[alg as Square]
         const piece = this._board[sq]
-        const f = file(sq)
-        const r = rank(sq)
         const isNavyZone = NAVY_MASK[sq] && !LAND_MASK[sq] // Pure navy (a, b files usually)
         const isMixedZone = NAVY_MASK[sq] && LAND_MASK[sq] // c file and river banks d6,e6,d7,e7
         const isBridge = ['f6', 'f7', 'h6', 'h7'].includes(alg)
@@ -1577,8 +1591,16 @@ export class CoTuLenh {
             ? '\x1b[31m'
             : '\x1b[34m'
           : ''
-        let symbol = piece ? piece.type.toUpperCase() : '·'
-        if (piece && this.isHeroic(sq)) symbol = '*' + symbol
+
+        // Use fixed-width display for all pieces (heroic or not)
+        let symbol = ' '
+        if (piece) {
+          symbol = this.isHeroic(sq)
+            ? '+' + piece.type.toUpperCase()
+            : ' ' + piece.type.toUpperCase()
+        } else {
+          symbol = ' ·'
+        }
 
         if (isBridge) {
           bgCode = piece ? '\x1b[43m' : '\x1b[47m' // Yellow if piece, White if empty
@@ -1600,10 +1622,11 @@ export class CoTuLenh {
       console.log(line)
       // Add a separator line between rank 7 (dr=7) and rank 6 (dr=6)
       if (dr === 7) {
-        console.log('   -----------------------') // Adjust length as needed
+        console.log('   --------------------------------') // Adjust length as needed
       }
     }
-    console.log('   a b c d e f g h i j k')
+    // Update the file labels to align with the 2-character piece display
+    console.log('    a  b  c  d  e  f  g  h  i  j  k')
   }
 
   // TODO: getComments, removeComments need pruning logic like chess.js if history is mutable
