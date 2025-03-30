@@ -7,7 +7,7 @@
   "module": "dist/esm/cotulenh.js",
   "types": "dist/types/cotulenh.d.ts",
   "scripts": {
-    "prepare": "npm run build",
+    "prepare": "husky",
     "build": "tsc -b ./tsconfig.cjs.json ./tsconfig.esm.json ./tsconfig.types.json",
     "check": "npm run format:check && npm run lint && npm run test && npm run build",
     "clean": "rm -rf ./dist",
@@ -19,6 +19,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^22.13.11",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
     "prettier": "^3.5.3",
     "ts-jest": "^29.3.0",
