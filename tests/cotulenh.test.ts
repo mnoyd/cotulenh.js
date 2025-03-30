@@ -6,9 +6,9 @@ import {
   RED,
   BLUE,
   Move,
-  ARTILLERY, // Added import
-  AIR_FORCE, // Added import
-} from './cotulenh';
+  ARTILLERY,
+  AIR_FORCE,
+} from '../src/cotulenh';
 
 describe('CoTuLenh Stay Capture Logic', () => {
   let game: CoTuLenh;
@@ -46,7 +46,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Tank at d4, Blue Infantry at d5, Red to move
     game.load('11/11/11/11/11/11/11/3i7/3T7/11/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     const captureMove = findMove(moves, 'd4', 'd5', false); // Expect normal capture
 
     expect(captureMove).toBeDefined();
@@ -61,7 +61,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
     // FEN: Red Artillery at i5, Blue Infantry at i8, Red to move
     game.load('11/11/11/11/8i2/11/11/8A2/11/11/11/11 r - - 0 1');
 
-    const moves = game.moves({ verbose: true }) as Move[];
+    const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
     const captureMove = findMove(moves, 'i5', 'i8', false); // Expect normal capture
 
     expect(captureMove).toBeDefined();
@@ -104,7 +104,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
 
   test('Land piece (Tank) capturing Navy on pure Water should STAY', () => {
     // FEN: Red Tank at c2, Blue Navy at b2, Red to move
-    game.load('11/11/11/11/11/11/11/11/11/1n1T6/11/11 r - - 0 1');
+    game.load('11/11/11/11/11/11/11/11/11/1n1T7/11/11 r - - 0 1');
 
     const moves = game.moves({ verbose: true }) as Move[];
     const captureMove = findMove(moves, 'c2', 'b2', true); // Expect stay capture
@@ -119,7 +119,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
 
   test('Navy capturing Land piece on pure Land should STAY', () => {
     // FEN: Red Navy at c3, Blue Tank at d3, Red to move
-    game.load('11/11/11/11/11/11/11/11/2Nt6/11/11/11 r - - 0 1');
+    game.load('11/11/11/11/11/11/11/11/2Nt/11/11/11 r - - 0 1');
 
     const moves = game.moves({ verbose: true }) as Move[];
     // Navy capture range vs Land is 3 (or 4 if heroic)
@@ -146,7 +146,7 @@ describe('CoTuLenh Stay Capture Logic', () => {
 
   test('Air Force capturing Navy on pure Water should STAY', () => {
     // FEN: Red Air Force at c2, Blue Navy at b2, Red to move
-    game.load('11/11/11/11/11/11/11/11/11/1n1F6/11/11 r - - 0 1');
+    game.load('11/11/11/11/11/11/11/11/11/1n1F7/11/11 r - - 0 1');
 
     const moves = game.moves({ verbose: true }) as Move[];
     const captureMove = findMove(moves, 'c2', 'b2', true); // Expect stay capture

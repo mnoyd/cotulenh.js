@@ -94,26 +94,25 @@ const SQUARE_MAP: Record<Square, number> = {
   a1: 0xB0, b1: 0xB1, c1: 0xB2, d1: 0xB3, e1: 0xB4, f1: 0xB5, g1: 0xB6, h1: 0xB7, i1: 0xB8, j1: 0xB9, k1: 0xBA
 };
 
-const NAVY_MASK = new Uint8Array(256);    // 1 = navigable by navy
-const LAND_MASK = new Uint8Array(256);    // 1 = accessible by light pieces
+const NAVY_MASK = new Uint8Array(256) // 1 = navigable by navy
+const LAND_MASK = new Uint8Array(256) // 1 = accessible by light pieces
 
 // Initialize movement masks
 function initMovementMasks() {
   for (let sq = 0; sq < 256; sq++) {
-    if (!isSquareOnBoard(sq)) continue;  // Add validity check
-    const f = file(sq);
-    const r = rank(sq);
-    const alg = algebraic(sq);
+    if (!isSquareOnBoard(sq)) continue // Add validity check
+    const f = file(sq)
+    const r = rank(sq)
+    const alg = algebraic(sq)
 
     // Navy operational areas (a-c files + specific squares)
-    NAVY_MASK[sq] = f <= 2 || ['d6','e6','d7','e7'].includes(alg) ? 1 : 0;
+    NAVY_MASK[sq] = f <= 2 || ['d6', 'e6', 'd7', 'e7'].includes(alg) ? 1 : 0
 
     // Land pieces operational areas (c-k files)
-    LAND_MASK[sq] = f >= 2 ? 1 : 0;
+    LAND_MASK[sq] = f >= 2 ? 1 : 0
   }
 }
-initMovementMasks();
-
+initMovementMasks()
 
 // --- Helper Functions ---
 
@@ -542,20 +541,25 @@ export class CoTuLenh {
     // TODO: Update setup, etc.
     return { ...piece, heroic: wasHeroic }
   }
-  private isHeavyZone(sq: number): 0|1|2 {
-    const f = file(sq);
-    const r = rank(sq);
-    if (f < 2) return 0;  // Not in heavy zone
-    
-    return r <= 5 ? 1 : 2;  // 1 = upper half, 2 = lower half
+  private isHeavyZone(sq: number): 0 | 1 | 2 {
+    const f = file(sq)
+    const r = rank(sq)
+    if (f < 2) return 0 // Not in heavy zone
+
+    return r <= 5 ? 1 : 2 // 1 = upper half, 2 = lower half
   }
 
   private isBridgeCrossing(from: number, to: number): boolean {
-    const path = this._getPath(from, to);
-    return path.some(sq => 
-      sq === SQUARE_MAP.f6 || sq === SQUARE_MAP.f7 ||
-      sq === SQUARE_MAP.h6 || sq === SQUARE_MAP.h7
-    );
+    const path = this._getPath(from, to)
+
+    // Check if both squares of either bridge are present in the path
+    const hasF6 = path.includes(SQUARE_MAP.f6)
+    const hasF7 = path.includes(SQUARE_MAP.f7)
+    const hasH6 = path.includes(SQUARE_MAP.h6)
+    const hasH7 = path.includes(SQUARE_MAP.h7)
+
+    // Valid crossing requires both squares of either bridge
+    return (hasF6 && hasF7) || (hasH6 && hasH7)
   }
 
   // --- Move Generation (Updated for Stay Capture Rules) ---
@@ -563,10 +567,12 @@ export class CoTuLenh {
     legal = true,
     piece = undefined,
     square = undefined,
+    ignoreSafety = false,
   }: {
     legal?: boolean
     piece?: PieceSymbol
     square?: Square
+    ignoreSafety?: boolean
   } = {}): InternalMove[] {
     const moves: InternalMove[] = []
     const us = this._turn
@@ -695,34 +701,43 @@ export class CoTuLenh {
             if (currentRange > moveRange && moveRange !== Infinity) break // Exceeded move range
 
             const targetPiece = this._board[to]
-            const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(pieceType)
+            const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(
+              pieceType,
+            )
 
             // --- Movement Restrictions based on Masks and Zones ---
             if (pieceType === NAVY) {
               // Navy can only operate on NAVY_MASK squares
               if (!NAVY_MASK[to]) {
-                 // Allow capture of land piece on non-navy square if within range
-                 if (targetPiece && targetPiece.color === them && LAND_MASK[to] && currentRange <= (isHero ? 4 : 3)) {
-                    // Capture logic handled below
-                 } else {
-                    break // Cannot move/exist on non-NAVY_MASK square (unless capturing L)
-                 }
+                // Allow capture of land piece on non-navy square if within range
+                if (
+                  targetPiece &&
+                  targetPiece.color === them &&
+                  LAND_MASK[to] &&
+                  currentRange <= (isHero ? 4 : 3)
+                ) {
+                  // Capture logic handled below
+                } else {
+                  break // Cannot move/exist on non-NAVY_MASK square (unless capturing L)
+                }
               }
-            } else if (LAND_MASK[from]) { // Land pieces (excluding Air Force which ignores terrain)
+            } else if (LAND_MASK[from]) {
+              // Land pieces (excluding Air Force which ignores terrain)
               // Land pieces cannot enter non-LAND_MASK squares (pure water)
               if (!LAND_MASK[to]) break
 
               // Heavy piece river crossing rule
               if (isHeavyPiece) {
-                const zoneFrom = this.isHeavyZone(from);
-                const zoneTo = this.isHeavyZone(to);
+                const zoneFrom = this.isHeavyZone(from)
+                const zoneTo = this.isHeavyZone(to)
                 // Check if crossing between the two land halves (zone 1 and 2)
                 if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
-                  const isCaptureMove = targetPiece && targetPiece.color === them;
-                  const isCrossingBridge = this.isBridgeCrossing(from, to);
+                  const isCaptureMove =
+                    targetPiece && targetPiece.color === them
+                  const isCrossingBridge = this.isBridgeCrossing(from, to)
                   // Must be capture OR bridge crossing to cross zones
                   if (!isCaptureMove && !isCrossingBridge) {
-                    break; // Illegal zone crossing
+                    break // Illegal zone crossing
                   }
                 }
               }
@@ -754,43 +769,68 @@ export class CoTuLenh {
                 }
 
                 if (captureAllowed) {
-                  // --- Simplified Stay Capture Logic ---
-                  let targetSquareIsValidForAttacker = false;
+                  const targetIsNavy = targetPiece.type === NAVY
+                  const targetIsLandPiece = LAND_MASK[to] && !targetIsNavy // Target is on land and not Navy
+                  const targetOnNavyMask = NAVY_MASK[to]
+                  const targetOnLandMask = LAND_MASK[to]
+                  const attackerIsLandPiece =
+                    LAND_MASK[from] &&
+                    pieceType !== AIR_FORCE &&
+                    pieceType !== NAVY // Piece starting on land (not AF/Navy)
 
-                  if (pieceType === NAVY) {
-                    // Navy can only exist on NAVY_MASK squares
-                    targetSquareIsValidForAttacker = NAVY_MASK[to] === 1;
-                    // Apply Navy-specific capture ranges (overrides general captureRange)
-                    const targetIsNavy = targetPiece.type === NAVY;
-                    const navyCaptureRange = isHero ? 5 : 4;
-                    const LCaptureRange = isHero ? 4 : 3;
-                    if (targetIsNavy && currentRange > navyCaptureRange) captureAllowed = false;
-                    if (!targetIsNavy && currentRange > LCaptureRange) captureAllowed = false; // Target is Land/Air
+                  // --- Specific Stay Capture Rules (using masks) ---
+                  if (
+                    attackerIsLandPiece &&
+                    targetIsNavy &&
+                    !targetOnLandMask
+                  ) {
+                    // Land piece capturing Navy on pure water (not land): MUST stay capture
+                    addStayCapture = true
+                    addNormalCapture = false
+                  } else if (pieceType === NAVY) {
+                    const navyCaptureRange = isHero ? 5 : 4 // Range vs other Navy
+                    const LCaptureRange = isHero ? 4 : 3 // Range vs Land pieces
 
-                  } else {
-                    // All other pieces (Land, Air, Heavy) require LAND_MASK squares
-                    targetSquareIsValidForAttacker = LAND_MASK[to] === 1;
-                  }
+                    // Check Navy-specific capture ranges
+                    if (targetIsNavy && currentRange > navyCaptureRange)
+                      captureAllowed = false
+                    if (targetIsLandPiece && currentRange > LCaptureRange)
+                      captureAllowed = false
 
-                  // Determine capture type based on target square validity
-                  if (captureAllowed) {
-                    if (targetSquareIsValidForAttacker) {
-                      // Target square is valid terrain -> Replace Capture
-                      addNormalCapture = true;
-                      addStayCapture = false;
-                    } else {
-                      // Target square is invalid terrain -> Stay Capture
-                      addNormalCapture = false;
-                      addStayCapture = true;
+                    if (
+                      captureAllowed &&
+                      targetIsLandPiece &&
+                      targetOnLandMask &&
+                      !targetOnNavyMask
+                    ) {
+                      // Navy capturing Land piece on pure Land square: CAN stay capture
+                      addStayCapture = true
+                      // Normal capture is still possible
+                    } else if (
+                      captureAllowed &&
+                      targetIsLandPiece &&
+                      targetOnLandMask &&
+                      targetOnNavyMask
+                    ) {
+                      // Navy capturing Land piece on mixed square (C file/banks): MUST replace
+                      addStayCapture = false
                     }
-                  } else {
-                      // Capture not allowed (e.g. out of range for Navy specific target)
-                      addNormalCapture = false;
-                      addStayCapture = false;
+                    // Navy capturing Navy always replaces (addStayCapture remains false)
+                  } else if (pieceType === AIR_FORCE) {
+                    if (targetIsNavy && !targetOnLandMask) {
+                      // Air Force capturing Navy on pure water: MUST stay capture
+                      addStayCapture = true
+                      addNormalCapture = false
+                    } else {
+                      // Air Force capturing anything else (Land piece or Navy on mixed): CAN choose stay or replace
+                      addStayCapture = true
+                      addNormalCapture = true
+                    }
                   }
+                  // Other pieces (Land capturing Land) always replace
 
                   // Add moves based on flags
-                  if (addNormalCapture) { // Will only be true if captureAllowed is true
+                  if (addNormalCapture) {
                     addMove(
                       moves,
                       us,
@@ -842,17 +882,19 @@ export class CoTuLenh {
     // TODO: Implement last piece auto-promotion check
 
     // Filter illegal moves (leaving commander in check)
-    if (!legal) return moves
-
-    const legalMoves: InternalMove[] = []
-    for (const move of moves) {
-      this._makeMove(move) // Temporarily make move
-      if (!this._isKingAttacked(us)) {
-        legalMoves.push(move)
+    if (legal && !ignoreSafety) {
+      // Only check commander safety if we're not ignoring it
+      const legalMoves: InternalMove[] = []
+      for (const move of moves) {
+        this._makeMove(move)
+        if (!this._isKingAttacked(us)) {
+          legalMoves.push(move)
+        }
+        this._undoMove()
       }
-      this._undoMove() // Undo temporary move
+      return legalMoves
     }
-    return legalMoves
+    return moves
   }
 
   // Helper to check if path is blocked (excluding destination square)
@@ -865,18 +907,18 @@ export class CoTuLenh {
     // Air Force ignores blocking
     const pieceType: PieceSymbol | undefined = this._board[from]?.type
     if (!pieceType) return false // Should not happen
-    if (pieceType === AIR_FORCE) return false;
+    if (pieceType === AIR_FORCE) return false
     // Artillery and Missile ignore blocking only for capture
-    if (isCapture && [ARTILLERY, MISSILE].includes(pieceType)) return false;
+    if (isCapture && [ARTILLERY, MISSILE].includes(pieceType)) return false
 
-    let current = from + offset;
+    let current = from + offset
     while (current !== to) {
-      if (!isSquareOnBoard(current)) return true; // Should not happen if 'to' is on board
+      if (!isSquareOnBoard(current)) return true // Should not happen if 'to' is on board
 
       // Only check for blocking pieces, terrain path checks removed
-      if (this._board[current]) return true; // Blocked by any piece
+      if (this._board[current]) return true // Blocked by any piece
 
-      current += offset;
+      current += offset
     }
     return false
   }
@@ -886,10 +928,19 @@ export class CoTuLenh {
     verbose = false,
     square = undefined,
     piece = undefined,
-  }: { verbose?: boolean; square?: Square; piece?: PieceSymbol } = {}):
-    | string[]
-    | Move[] {
-    const internalMoves = this._moves({ square, piece, legal: true }) // Generate legal moves
+    ignoreSafety = false,
+  }: {
+    verbose?: boolean
+    square?: Square
+    piece?: PieceSymbol
+    ignoreSafety?: boolean
+  } = {}): string[] | Move[] {
+    const internalMoves = this._moves({
+      square,
+      piece,
+      legal: true,
+      ignoreSafety,
+    }) // Generate legal moves
 
     if (verbose) {
       // Map to Move objects, passing current heroic status
@@ -904,38 +955,38 @@ export class CoTuLenh {
     }
   }
   private _getPath(from: number, to: number): number[] {
-    const path: number[] = [];
-    const dx = file(to) - file(from);
-    const dy = rank(to) - rank(from);
-    const dirX = dx && (dx > 0 ? 1 : -1); // Horizontal direction
-    const dirY = dy && (dy > 0 ? 1 : -1); // Vertical direction
-    
+    const path: number[] = []
+    const dx = file(to) - file(from)
+    const dy = rank(to) - rank(from)
+    const dirX = dx && (dx > 0 ? 1 : -1) // Horizontal direction
+    const dirY = dy && (dy > 0 ? 1 : -1) // Vertical direction
+
     // Handle orthogonal moves
     if (dx === 0 || dy === 0) {
-      const steps = Math.max(Math.abs(dx), Math.abs(dy));
-      const offset = dx ? dirX : dirY * 16;
-      
+      const steps = Math.max(Math.abs(dx), Math.abs(dy))
+      const offset = dx ? dirX : dirY * 16
+
       for (let i = 1; i <= steps; i++) {
-        const sq = from + (offset * i);
-        if (isSquareOnBoard(sq)) path.push(sq);
+        const sq = from + offset * i
+        if (isSquareOnBoard(sq)) path.push(sq)
       }
     }
     // Handle diagonal moves
     else if (Math.abs(dx) === Math.abs(dy)) {
-      const offset = dirX + (dirY * 16);
-      
+      const offset = dirX + dirY * 16
+
       for (let i = 1; i <= Math.abs(dx); i++) {
-        const sq = from + (offset * i);
-        if (isSquareOnBoard(sq)) path.push(sq);
+        const sq = from + offset * i
+        if (isSquareOnBoard(sq)) path.push(sq)
       }
     }
     // Handle knight-like moves (for Missile/Militia)
     else if (Math.abs(dx) + Math.abs(dy) === 3 && Math.abs(dx) !== 3) {
       // No intermediate squares for leaping pieces
-      return [];
+      return []
     }
 
-    return path.filter(sq => sq !== from); // Exclude starting square
+    return path.filter((sq) => sq !== from) // Exclude starting square
   }
 
   // --- Move Execution/Undo (Updated for Stay Capture) ---
@@ -1495,13 +1546,13 @@ export class CoTuLenh {
   }
   removeComment(): string | undefined {
     const comment = this._comments[this.fen()]
-    delete this._comments[this.fen()];
-    return comment;
+    delete this._comments[this.fen()]
+    return comment
   }
   // Removed printTerrainZones
 
   printBoard(): void {
-    const ranks: { [key: number]: string[] } = {};
+    const ranks: { [key: number]: string[] } = {}
 
     // Group squares by their display rank (12 down to 1)
     for (const [alg, sq] of Object.entries(SQUARE_MAP)) {
@@ -1516,43 +1567,47 @@ export class CoTuLenh {
     for (let dr = 12; dr >= 1; dr--) {
       let line = `${dr}`.padStart(2, ' ') + ' '
       for (const alg of ranks[dr] || []) {
-        const sq = SQUARE_MAP[alg as Square];
-        const piece = this._board[sq];
-        const f = file(sq);
-        const r = rank(sq);
-        const isNavyZone = NAVY_MASK[sq] && !LAND_MASK[sq]; // Pure navy (a, b files usually)
-        const isMixedZone = NAVY_MASK[sq] && LAND_MASK[sq]; // c file and river banks d6,e6,d7,e7
-        const isBridge = ['f6', 'f7', 'h6', 'h7'].includes(alg);
+        const sq = SQUARE_MAP[alg as Square]
+        const piece = this._board[sq]
+        const f = file(sq)
+        const r = rank(sq)
+        const isNavyZone = NAVY_MASK[sq] && !LAND_MASK[sq] // Pure navy (a, b files usually)
+        const isMixedZone = NAVY_MASK[sq] && LAND_MASK[sq] // c file and river banks d6,e6,d7,e7
+        const isBridge = ['f6', 'f7', 'h6', 'h7'].includes(alg)
 
-        let bgCode = '';
-        let fgCode = piece ? (piece.color === RED ? '\x1b[31m' : '\x1b[34m') : '';
-        let symbol = piece ? piece.type.toUpperCase() : '·';
-        if (piece && this.isHeroic(sq)) symbol = '*' + symbol;
+        let bgCode = ''
+        let fgCode = piece
+          ? piece.color === RED
+            ? '\x1b[31m'
+            : '\x1b[34m'
+          : ''
+        let symbol = piece ? piece.type.toUpperCase() : '·'
+        if (piece && this.isHeroic(sq)) symbol = '*' + symbol
 
         if (isBridge) {
-          bgCode = piece ? '\x1b[45m' : '\x1b[47m'; // Magenta if piece, White if empty
+          bgCode = piece ? '\x1b[45m' : '\x1b[47m' // Magenta if piece, White if empty
         } else if (isMixedZone) {
-          bgCode = '\x1b[46m'; // Cyan
+          bgCode = '\x1b[46m' // Cyan
         } else if (isNavyZone) {
-          bgCode = '\x1b[44m'; // Blue
+          bgCode = '\x1b[44m' // Blue
         }
         // Pure Land zones have no bgCode
 
         if (bgCode) {
           // Apply background and foreground colors
-          line += `${bgCode}${fgCode}${symbol}\x1b[0m${bgCode} \x1b[0m`; // Add space with bg color
+          line += `${bgCode}${fgCode}${symbol}\x1b[0m${bgCode} \x1b[0m` // Add space with bg color
         } else {
           // No background, just foreground for piece or symbol for empty
-          line += piece ? `${fgCode}${symbol}\x1b[0m ` : `${symbol} `;
+          line += piece ? `${fgCode}${symbol}\x1b[0m ` : `${symbol} `
         }
       }
-      console.log(line);
+      console.log(line)
       // Add a separator line between rank 7 (dr=7) and rank 6 (dr=6)
       if (dr === 7) {
-        console.log('   -----------------------'); // Adjust length as needed
+        console.log('   -----------------------') // Adjust length as needed
       }
     }
-    console.log('   a b c d e f g h i j k');
+    console.log('   a b c d e f g h i j k')
   }
 
   // TODO: getComments, removeComments need pruning logic like chess.js if history is mutable

@@ -19,17 +19,14 @@
         "skipFiles": [
           "<node_internals>/**"
         ],
-        "program": "${workspaceFolder}/demo/movement-demo.ts",
+        "program": "${file}",
         "runtimeArgs": [
           "-r",
           "ts-node/register",
           "-r",
           "tsconfig-paths/register"
-        ],
-        "preLaunchTask": "npm: prepare",
-        "outFiles": [
-          "${workspaceFolder}/dist/**/*.js"
         ]
+        // "preLaunchTask": "npm: prepare",
       },
       {
         "name": "Jest file",

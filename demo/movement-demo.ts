@@ -1,5 +1,3 @@
-#!/usr/bin/env -S node --no-warnings
-
 import { CoTuLenh, Move } from '../src/cotulenh';
 // Helper to print moves
 function printMoves(label: string, moves: string[] | Move[]) {
@@ -74,16 +72,16 @@ function movementDemo() {
 
 function attemptMove(game: CoTuLenh, from: string, to: string) {
   console.log(`\nAttempting: ${from} -> ${to}`);
-  game.put({ type: 'c', color: 'r' }, 'f12');
-  game.put({ type: 'c', color: 'b' }, 'h1');
+  game.put({ type: 'c', color: 'b' }, 'f12');
+  game.put({ type: 'c', color: 'r' }, 'h1');
   console.log("Before:");
   game.printBoard();
 
   try {
-    const moves = game.moves({ square: from, verbose: true })
+    const moves = game.moves({ square: from, verbose: true, ignoreSafety: true })
     printMoves(`Moves for ${from}`, moves)
     const move = game.move({ from, to });
-    console.log(`SUCCESS: ${move?.san}`);
+    console.log(`SUCCESS: ${move?.san}`); 
     console.log("After:");
     game.printBoard();
   } catch (e) {
@@ -92,9 +90,44 @@ function attemptMove(game: CoTuLenh, from: string, to: string) {
     game.clear();
   }
 }
+const findMove = (
+  moves: Move[],
+  from: string,
+  to: string,
+  isStayCapture?: boolean,
+): Move | undefined => {
+  return moves.find((m) => {
+    const matchFrom = m.from === from;
+    // For stay capture, the move's 'to' is the original square,
+    // and 'targetSquare' is the captured piece's square.
+    // For normal capture, the move's 'to' is the destination/captured piece's square.
+    const matchTo = isStayCapture
+      ? m.to === from && m.targetSquare === to
+      : m.to === to;
+    const matchStayFlag =
+      isStayCapture === undefined || m.isStayCapture() === isStayCapture;
+
+    return matchFrom && matchTo && matchStayFlag;
+  });
+};
+
+function demoSpecificMovements(){
+  const game = new CoTuLenh();
+  game.clear();
+  game.load('11/11/11/11/8i2/11/11/8A2/11/11/11/11 r - - 0 1');
+
+  // // game.printBoard();
+  // const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[];
+  // const captureMove = findMove(moves, 'i5', 'i8', false);
+  // console.log(captureMove);
+  attemptMove(game, 'i5', 'f8');
+  // game.move({from: 'c12', to: 'i5'});
+  // game.printBoard();
+}
 
 // Run the demo
-movementDemo();
+// movementDemo();
+demoSpecificMovements();
 console.log("\nDemo complete! Check above output for:");
 console.log("- Successful moves (green)");
 console.log("- Failed attempts (red)");
