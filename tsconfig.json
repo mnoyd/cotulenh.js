@@ -7,6 +7,6 @@
     "strict": true,
     "target": "ESNext"
   },
-  "include": ["src/**/*", "demo/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["sample/**"]
 }
