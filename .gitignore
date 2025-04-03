@@ -3,9 +3,5 @@ node_modules/
 dist/
 scripts/
 
-/*.js
-/*.d.ts
-/*.js.map
-
 sample/
 coverage/
