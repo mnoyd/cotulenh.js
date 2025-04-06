@@ -22,6 +22,9 @@ export const AIR_FORCE = 'f'
 export const NAVY = 'n'
 export const HEADQUARTER = 'h'
 
+// Pieces that can perform stay capture *while being carried*
+const CAN_STAY_CAPTURE_WHEN_CARRIED: PieceSymbol[] = [AIR_FORCE]
+
 // --- Types ---
 export type Color = 'r' | 'b' // Updated Color type
 export type PieceSymbol =
@@ -57,6 +60,7 @@ export const DEFAULT_POSITION =
 export type Piece = {
   color: Color
   type: PieceSymbol
+  carried?: Piece[] // Array to hold carried pieces (excluding the carrier itself)
 }
 
 // --- 0x88 Style Board Representation (Adapted for 16x16) ---
@@ -159,6 +163,7 @@ const FLAGS: Record<string, string> = {
   CAPTURE: 'c',
   HEROIC_PROMOTION: 'h', // Flag for when a piece becomes heroic
   STAY_CAPTURE: 's', // General flag for capturing without moving
+  DEPLOY: 'd', // Flag for deploy move
 }
 
 const BITS: Record<string, number> = {
@@ -166,6 +171,7 @@ const BITS: Record<string, number> = {
   CAPTURE: 2,
   HEROIC_PROMOTION: 4, // Example bit
   STAY_CAPTURE: 8, // General flag bit
+  DEPLOY: 16, // Added deploy bit
 }
 
 // --- Move/History Types ---
@@ -174,7 +180,7 @@ type InternalMove = {
   color: Color
   from: number // 0x88 index
   to: number // 0x88 index (destination OR target square for stay capture)
-  piece: PieceSymbol
+  piece: PieceSymbol // The piece being moved (or deployed)
   captured?: PieceSymbol
   // promotion?: PieceSymbol; // Promotion is status change, not piece change?
   flags: number // Bitmask using BITS
@@ -191,6 +197,7 @@ interface History {
   halfMoves: number // Half move clock before the move
   moveNumber: number // Move number before the move
   heroicStatus: Record<number, boolean> // Snapshot of heroic status before move
+  deployState: { stackSquare: number; turn: Color } | null // Snapshot of deploy state before move
 }
 
 // Public Move class (similar to chess.js) - can be fleshed out later
@@ -209,14 +216,16 @@ export class Move {
   heroic: boolean // Was the piece heroic *before* this move?
   becameHeroic?: boolean // Did the piece become heroic *on* this move?
   targetSquare?: Square // For stay capture, the square of the captured piece
+  isDeploy: boolean // Was this a deploy move from a stack?
+  stackBefore?: string // Optional: FEN-like representation of the stack before deploy, e.g., "(NFT)"
 
   // Constructor needs the main class instance to generate SAN, FENs etc.
   constructor(game: CoTuLenh, internal: InternalMove, pieceWasHeroic: boolean) {
     const { color, piece, from, to, flags, captured, becameHeroic } = internal
 
     this.color = color
-    this.piece = piece
-    this.from = algebraic(from)
+    this.piece = piece // This is the piece that MOVED (or was deployed)
+    this.from = algebraic(from) // Square the move originated from (stack location for deploy)
     this.flags = ''
     for (const flag in BITS) {
       if (BITS[flag] & flags) {
@@ -224,32 +233,59 @@ export class Move {
       }
     }
     if (captured) this.captured = captured
-    this.heroic = pieceWasHeroic
+    this.heroic = pieceWasHeroic // Heroic status of the piece *before* it moved/deployed
     if (becameHeroic) this.becameHeroic = true
+    this.isDeploy = (flags & BITS.DEPLOY) !== 0
+
+    // TODO: Populate this.stackBefore if isDeploy (requires looking at state before move)
+    // This is tricky here, better done when generating the verbose history or SAN string
+    // this.stackBefore = this.isDeploy ? game.getStackRepresentation(internal.from) : undefined;
 
     // Determine 'to' square (final location) and 'targetSquare' for display/Move object
     if (flags & BITS.STAY_CAPTURE) {
-      this.to = algebraic(from) // Piece stays put
+      // For stay capture (including deploy stay capture), the piece ends up back 'from'
+      this.to = algebraic(from)
       this.targetSquare = algebraic(to) // 'to' in internal move holds the target square
     } else {
-      this.to = algebraic(to) // Normal move destination
+      // For normal moves/captures (including normal deploy), the piece ends up at 'to'
+      this.to = algebraic(to)
     }
 
-    // Store FEN before move
-    this.before = game.fen()
-
-    // The 'before' and 'after' FENs are set by the public move() method
-    // after the move is made and the Move object is constructed.
+    // Store FEN before move - this needs to be set externally by the move() method
     this.before = 'FEN_BEFORE_PLACEHOLDER' // Will be set by move()
     this.after = 'FEN_AFTER_PLACEHOLDER' // Will be set by move()
 
-    // TODO: Implement SAN/LAN generation based on rules
-    // Use targetSquare for the destination part of SAN if it's a stay capture
-    const sanDestination = this.targetSquare ? this.targetSquare : this.to
-    this.san = `${this.heroic ? '*' : ''}${this.piece.toUpperCase()}${this.from}${
-      flags & BITS.CAPTURE ? 'x' : '-'
-    }${sanDestination}${this.becameHeroic ? '*' : ''}` // Basic placeholder SAN
-    this.lan = `${this.from}${sanDestination}` // Basic placeholder LAN
+    // --- SAN Generation (Placeholder - needs refinement in CoTuLenh class) ---
+    const pieceChar = this.piece.toUpperCase()
+    const heroicPrefix = this.heroic ? '*' : '' // Heroic status of the piece moving/deploying
+    const heroicSuffix = this.becameHeroic ? '*' : ''
+    let san = ''
+
+    if (this.isDeploy) {
+      // Deploy move: (Stack)PieceFrom>To or (Stack)PieceFrom>xTo or (Stack)PieceFrom<Target
+      const stackRep = this.stackBefore || '(?)' // Placeholder
+      if (flags & BITS.STAY_CAPTURE) {
+        const target = algebraic(to) // 'to' is target
+        san = `${stackRep}${pieceChar}${this.from}<${target}${heroicSuffix}`
+      } else {
+        const separator = flags & BITS.CAPTURE ? '>x' : '>'
+        const dest = algebraic(to) // 'to' is destination
+        san = `${stackRep}${pieceChar}${this.from}${separator}${dest}${heroicSuffix}`
+      }
+    } else if (flags & BITS.STAY_CAPTURE) {
+      // Normal Stay capture: PieceFrom<Target
+      const target = algebraic(to) // 'to' is the target
+      san = `${heroicPrefix}${pieceChar}${this.from}<${target}${heroicSuffix}`
+    } else {
+      // Normal move: PieceFrom-To or PieceFromxTo
+      const separator = flags & BITS.CAPTURE ? 'x' : '-'
+      const dest = algebraic(to) // 'to' is the destination
+      san = `${heroicPrefix}${pieceChar}${this.from}${separator}${dest}${heroicSuffix}`
+    }
+
+    // TODO: Add ambiguity resolution to SAN (needs access to all legal moves)
+    this.san = san // Store basic SAN for now
+    this.lan = `${this.from}${algebraic(to)}` // LAN remains simple from-to (destination/target)
   }
 
   // Add helper methods like isCapture(), isPromotion() etc. if needed
@@ -296,6 +332,7 @@ export class CoTuLenh {
   private _comments: Record<string, string> = {}
   private _positionCount: Record<string, number> = {}
   private _heroicStatus: Record<number, boolean> = {} // Tracks heroic status by square index
+  private _deployState: { stackSquare: number; turn: Color } | null = null // Tracks active deploy phase
 
   constructor(fen = DEFAULT_POSITION) {
     this.load(fen)
@@ -314,6 +351,7 @@ export class CoTuLenh {
     this._header = preserveHeaders ? this._header : {}
     this._positionCount = {}
     this._heroicStatus = {} // Clear heroic status
+    this._deployState = null // Clear deploy state
 
     delete this._header['SetUp']
     delete this._header['FEN']
@@ -358,7 +396,79 @@ export class CoTuLenh {
           fileIndex += emptySquares
           currentRankSquares += emptySquares
         } else {
-          // Check for heroic status with '+' prefix
+          // Check for stack notation '('
+          if (char === '(') {
+            const endParen = rankStr.indexOf(')', i)
+            if (endParen === -1) {
+              throw new Error(
+                `Invalid FEN: Unmatched parenthesis in rank ${12 - r}`,
+              )
+            }
+            const stackContent = rankStr.substring(i + 1, endParen)
+            if (stackContent.length === 0) {
+              throw new Error(`Invalid FEN: Empty stack '()' in rank ${12 - r}`)
+            }
+
+            let carrierHeroic = false
+            let carrierIndex = 0
+            if (stackContent[0] === '+') {
+              carrierHeroic = true
+              carrierIndex = 1
+              if (stackContent.length < 2) {
+                throw new Error(
+                  `Invalid FEN: Stack '(+)' missing carrier in rank ${12 - r}`,
+                )
+              }
+            }
+
+            const carrierChar = stackContent[carrierIndex]
+            const carrierColor = carrierChar < 'a' ? RED : BLUE
+            const carrierType = carrierChar.toLowerCase() as PieceSymbol
+            // TODO: Validate carrier type
+
+            const carriedPieces: Piece[] = []
+            for (let j = carrierIndex + 1; j < stackContent.length; j++) {
+              // TODO: Handle heroic carried pieces if notation allows e.g. (+F)
+              const carriedChar = stackContent[j]
+              const carriedColor = carriedChar < 'a' ? RED : BLUE
+              const carriedType = carriedChar.toLowerCase() as PieceSymbol
+              // TODO: Validate carried type and color (must match carrier)
+              if (carriedColor !== carrierColor) {
+                console.warn(
+                  `Carried piece color mismatch in stack: ${stackContent}`,
+                )
+                continue // Skip invalid carried piece
+              }
+              carriedPieces.push({ type: carriedType, color: carriedColor })
+            }
+
+            // TODO: Validate stack based on carrierBlueprints (deferred)
+
+            const sq0x88 = r * 16 + fileIndex
+            this._board[sq0x88] = {
+              type: carrierType,
+              color: carrierColor,
+              carried: carriedPieces.length > 0 ? carriedPieces : undefined,
+            }
+            if (carrierHeroic) this._setHeroic(sq0x88, true)
+
+            if (carrierType === COMMANDER) {
+              if (this._kings[carrierColor] === -1) {
+                this._kings[carrierColor] = sq0x88
+              } else {
+                console.warn(
+                  `Multiple commanders found for color ${carrierColor}.`,
+                )
+              }
+            }
+
+            fileIndex++
+            currentRankSquares++
+            i = endParen // Move parser past the closing parenthesis
+            continue // Skip to next char in rank string
+          }
+
+          // Check for heroic status with '+' prefix (for single pieces)
           let isHeroic = false
           if (char === '+') {
             isHeroic = true
@@ -431,15 +541,40 @@ export class CoTuLenh {
             fen += empty
             empty = 0
           }
-          let char =
-            piece.color === RED
-              ? piece.type.toUpperCase()
-              : piece.type.toLowerCase()
-          // Add heroic marker with '+' prefix
-          if (this.isHeroic(sq)) {
-            char = '+' + char
+
+          // Check if it's a stack
+          if (piece.carried && piece.carried.length > 0) {
+            // Format stack: (CP1P2...) or +(CP1P2...)
+            let stackStr =
+              piece.color === RED
+                ? piece.type.toUpperCase()
+                : piece.type.toLowerCase()
+            // Sort carried pieces alphabetically for consistent FEN? Or keep original order? Let's sort.
+            const carriedSorted = [...piece.carried].sort((a, b) =>
+              a.type.localeCompare(b.type),
+            )
+            stackStr += carriedSorted
+              .map((p) =>
+                p.color === RED ? p.type.toUpperCase() : p.type.toLowerCase(),
+              )
+              .join('')
+            stackStr = `(${stackStr})`
+            if (this.isHeroic(sq)) {
+              stackStr = '+' + stackStr
+            }
+            fen += stackStr
+          } else {
+            // Single piece
+            let char =
+              piece.color === RED
+                ? piece.type.toUpperCase()
+                : piece.type.toLowerCase()
+            // Add heroic marker with '+' prefix
+            if (this.isHeroic(sq)) {
+              char = '+' + char
+            }
+            fen += char
           }
-          fen += char
         } else {
           empty++
         }
@@ -568,11 +703,337 @@ export class CoTuLenh {
     return (hasF6 && hasF7) || (hasH6 && hasH7)
   }
 
-  // --- Move Generation (Updated for Stay Capture Rules) ---
+  // --- Move Generation Helper ---
+  // Generates pseudo-legal moves for a *single* piece from a given square,
+  // considering its type, color, heroic status, and board state.
+  // Does NOT handle deploy state or filtering for king safety.
+  // Added isDeployMove flag to handle special stay capture rules.
+  private _generateMovesForPiece(
+    from: number,
+    pieceData: Piece,
+    isHero: boolean,
+    isDeployMove = false, // Flag to indicate if this is a deploy move
+  ): InternalMove[] {
+    const moves: InternalMove[] = []
+    const us = pieceData.color
+    const them = swapColor(us)
+    const pieceType = pieceData.type
+    const moveOffsets = PIECE_OFFSETS[pieceType]
+
+    if (!moveOffsets) return [] // Should not happen
+
+    // --- Determine Movement Properties based on piece and heroic status ---
+    let moveRange = 1
+    let canMoveDiagonal = false
+    let isSliding = false
+    let captureRange = 1
+    let captureIgnoresPieceBlocking = false // Specific to blocking by other pieces
+    let moveIgnoresBlocking = false // Ignores pieces and terrain for movement
+
+    // Base ranges/abilities
+    switch (pieceType) {
+      case COMMANDER:
+        isSliding = true
+        moveRange = Infinity
+        captureRange = 1 // Special capture rule
+        canMoveDiagonal = true
+        break
+      case INFANTRY:
+      case ENGINEER:
+      case ANTI_AIR:
+        moveRange = 1
+        captureRange = 1
+        break
+      case TANK:
+        moveRange = 2
+        captureRange = 2
+        isSliding = true
+        break
+      case MILITIA:
+        moveRange = 1
+        captureRange = 1
+        canMoveDiagonal = true
+        break
+      case ARTILLERY:
+        isSliding = true
+        moveRange = 3
+        captureRange = 3
+        captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
+        canMoveDiagonal = true
+        break
+      case MISSILE:
+        isSliding = true
+        moveRange = 2 // Approximation
+        captureRange = 2 // Approximation
+        captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
+        canMoveDiagonal = true
+        break
+      case AIR_FORCE:
+        isSliding = true
+        moveRange = 4
+        captureRange = 4
+        moveIgnoresBlocking = true // Ignores piece and terrain blocking for move AND capture
+        captureIgnoresPieceBlocking = true // Explicitly ignores piece blocking for capture
+        canMoveDiagonal = true
+        break
+      case NAVY:
+        isSliding = true
+        moveRange = 4 // Base move range
+        captureRange = 4 // Default to maximum range (for torpedo attacks)
+        canMoveDiagonal = true
+        // Navy has two attack mechanisms:
+        // 1. Naval Gun: Range 3, targets land pieces
+        // 2. Torpedo: Range 4, targets other Navy pieces
+        break
+      case HEADQUARTER:
+        moveRange = 0
+        captureRange = 0
+        break
+    }
+
+    // Apply Heroic bonus
+    if (isHero) {
+      moveRange++
+      captureRange++
+      canMoveDiagonal = true // All heroic pieces can move diagonally
+      if (pieceType === HEADQUARTER) {
+        // Heroic HQ moves like Militia
+        moveRange = 1
+        captureRange = 1
+        isSliding = false // HQ steps, doesn't slide
+      }
+    }
+
+    const currentOffsets = canMoveDiagonal ? ALL_OFFSETS : ORTHOGONAL_OFFSETS
+
+    // --- Generate Moves based on Offsets and Rules ---
+    if (pieceType === MISSILE) {
+      // TODO: Implement Missile's specific movement pattern generation
+      console.warn('Missile movement not fully implemented.')
+    } else {
+      // Standard offset iteration for other pieces
+      for (const offset of currentOffsets) {
+        let currentRange = 0
+        let to = from
+        let pieceBlockedMovement = false // Track if movement path is blocked by a piece
+        let terrainBlockedMovement = false // Track if movement path is blocked by terrain
+
+        while (true) {
+          // Loop for sliding pieces or single step
+          to += offset
+          currentRange++
+
+          if (!isSquareOnBoard(to)) break // Off the 11x12 board
+          if (currentRange > moveRange && currentRange > captureRange) break // Exceeded both move and capture range
+
+          const targetPiece = this._board[to]
+          const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(
+            pieceType,
+          )
+
+          // --- Terrain Blocking Check (Movement Only) ---
+          if (!moveIgnoresBlocking) {
+            // Rely on the flag now
+            if (pieceType === NAVY) {
+              // Navy can only MOVE onto NAVY_MASK squares
+              if (!NAVY_MASK[to]) {
+                terrainBlockedMovement = true
+              }
+            } else if (LAND_MASK[from]) {
+              // Assuming non-Navy are land pieces for this check
+              // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
+              if (!LAND_MASK[to]) {
+                terrainBlockedMovement = true
+              }
+              // Heavy piece river crossing rule (Movement Only)
+              if (isHeavyPiece && !terrainBlockedMovement) {
+                const zoneFrom = this.isHeavyZone(from)
+                const zoneTo = this.isHeavyZone(to)
+                if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
+                  const isCrossingBridge = this.isBridgeCrossing(from, to)
+                  if (!isCrossingBridge) {
+                    // Cannot cross river unless via bridge (movement)
+                    terrainBlockedMovement = true
+                  }
+                }
+              }
+            }
+          }
+          // Note: Terrain blocking for *capture targeting* is ignored per rules.
+
+          // --- Target Square Analysis ---
+          let canMoveToSquare = !terrainBlockedMovement // Assume can move unless terrain blocked
+
+          if (targetPiece) {
+            // --- Capture Logic ---
+            if (targetPiece.color === them && currentRange <= captureRange) {
+              let captureAllowed = true
+              let addNormalCapture = true
+              let addStayCapture = false
+
+              // Commander captures only adjacent
+              if (pieceType === COMMANDER && currentRange > 1) {
+                captureAllowed = false
+              }
+
+              // Navy attack mechanisms & Stay Capture Rule
+              if (pieceType === NAVY) {
+                if (targetPiece.type === NAVY) {
+                  // Torpedo attack: Range 4 (5 if heroic)
+                  if (currentRange > (isHero ? 5 : 4)) {
+                    captureAllowed = false
+                  }
+                } else {
+                  // Naval Gun attack: Range 3 (4 if heroic)
+                  if (currentRange > (isHero ? 4 : 3)) {
+                    captureAllowed = false
+                  }
+                }
+              }
+
+              // Check if path is blocked by PIECES for capture
+              if (
+                captureAllowed &&
+                !captureIgnoresPieceBlocking && // Check piece blocking flag
+                pieceBlockedMovement // Check if movement path was blocked by a piece
+              ) {
+                // Tank special case: can capture at range 2 even if blocked at 1
+                if (pieceType === TANK && currentRange === 2) {
+                  // Allow capture if the blocking piece was at range 1
+                  // Need to check if the *specific* blocking piece was at range 1
+                  // This requires tracking the blocking square, complex.
+                  // Simpler: Assume Tank can capture at range 2 if path was blocked earlier.
+                  captureAllowed = true
+                } else {
+                  captureAllowed = false // Blocked by piece for capture
+                }
+              }
+              // Note: Terrain blocking for capture targeting is ignored per rules.
+
+              // NEW: Check if a normal capture would land on invalid terrain for the attacker
+              if (captureAllowed && addNormalCapture) {
+                // Use flag
+                const isTargetTerrainValidForAttacker =
+                  pieceType === NAVY ? NAVY_MASK[to] : LAND_MASK[to]
+
+                // Force stay capture if target terrain is invalid for attacker's movement,
+                // UNLESS the piece is allowed to stay capture when carried (and this is a deploy move).
+                if (!isTargetTerrainValidForAttacker) {
+                  if (
+                    isDeployMove &&
+                    CAN_STAY_CAPTURE_WHEN_CARRIED.includes(pieceType)
+                  ) {
+                    // Allow both normal and stay capture for pieces like Air Force during deploy
+                    // if the target terrain is invalid for *movement* but capture is allowed.
+                    // However, if AF targets water, it *must* stay capture.
+                    if (pieceType === AIR_FORCE && !LAND_MASK[to]) {
+                      addNormalCapture = false // Cannot land on water
+                      addStayCapture = true
+                    } else {
+                      // Allow both for now, maybe refine later if needed
+                      addNormalCapture = true
+                      addStayCapture = true
+                    }
+                  } else if (
+                    !isDeployMove &&
+                    pieceType === AIR_FORCE &&
+                    !LAND_MASK[to]
+                  ) {
+                    // Normal Air Force move targeting water must stay capture
+                    addNormalCapture = false
+                    addStayCapture = true
+                  } else {
+                    // All other cases where target terrain is invalid force stay capture
+                    addNormalCapture = false
+                    addStayCapture = true
+                  }
+                }
+              }
+
+              if (captureAllowed) {
+                if (addNormalCapture) {
+                  addMove(
+                    moves,
+                    us,
+                    from,
+                    to,
+                    pieceType,
+                    targetPiece.type,
+                    BITS.CAPTURE,
+                  )
+                }
+                if (addStayCapture) {
+                  // For stay capture, 'to' stores the *target* square
+                  addMove(
+                    moves,
+                    us,
+                    from,
+                    to, // 'to' is the target square
+                    pieceType,
+                    targetPiece.type,
+                    BITS.CAPTURE | BITS.STAY_CAPTURE,
+                  )
+                }
+              }
+            } // End capture check (if targetPiece.color === them)
+
+            // --- Piece Blocking Check (Movement) ---
+            if (!moveIgnoresBlocking) {
+              // Use flag
+              // Navy ignores FRIENDLY piece blocking
+              if (!(pieceType === NAVY && targetPiece.color === us)) {
+                pieceBlockedMovement = true // Mark path as blocked for further movement
+              }
+            }
+
+            // If piece cannot capture over other pieces, stop checking this direction
+            if (!captureIgnoresPieceBlocking && pieceType !== TANK) {
+              // If movement is blocked by a piece, and the current piece
+              // cannot shoot over pieces (and isn't a Tank), stop.
+              if (pieceBlockedMovement) break
+            }
+            // Otherwise (can shoot over pieces or is Tank), continue checking
+            // for captures further along the path.
+          } else {
+            // --- Move to Empty Square Logic ---
+            // Check movement range AND terrain/piece blocking
+            if (
+              currentRange <= moveRange &&
+              canMoveToSquare && // Use the flag determined above
+              !pieceBlockedMovement
+            ) {
+              addMove(moves, us, from, to, pieceType)
+            }
+          }
+
+          // --- Loop Termination/Continuation Logic ---
+
+          // 1. Stop if not a sliding piece (already handled the single step)
+          if (!isSliding) break
+
+          // 2. Stop ONLY if path is blocked by a piece AND the current piece cannot capture over other pieces.
+          //    Terrain blocking does NOT stop the loop for sliding pieces checking for captures.
+          if (
+            pieceBlockedMovement &&
+            !captureIgnoresPieceBlocking &&
+            !moveIgnoresBlocking
+          ) {
+            break
+          }
+          // Note: Terrain blocking (`terrainBlockedMovement`) does NOT break the loop here.
+          // It only prevents adding a NORMAL move onto the blocked square.
+          // Sliding pieces continue checking subsequent squares for CAPTURES even if terrain blocks movement onto intermediate squares.
+        } // End while loop for sliding range
+      } // End for loop over offsets
+    } // End else block (non-Missile pieces)
+    return moves
+  }
+
+  // --- Main Move Generation ---
   private _moves({
     legal = true,
-    piece = undefined,
-    square = undefined,
+    piece: filterPiece = undefined, // Renamed to avoid conflict
+    square: filterSquare = undefined, // Renamed
     ignoreSafety = false,
   }: {
     legal?: boolean
@@ -580,319 +1041,117 @@ export class CoTuLenh {
     square?: Square
     ignoreSafety?: boolean
   } = {}): InternalMove[] {
-    const moves: InternalMove[] = []
+    let allMoves: InternalMove[] = []
     const us = this._turn
     const them = swapColor(us)
 
-    let startSq = 0
-    let endSq = 255 // Iterate over the whole 16x16 internal board
+    // --- Handle Active Deploy State ---
+    if (this._deployState && this._deployState.turn === us) {
+      const stackSquare = this._deployState.stackSquare
+      const carrierPiece = this._board[stackSquare]
 
-    if (square) {
-      const sq = SQUARE_MAP[square]
-      if (sq === undefined || !this._board[sq] || this._board[sq]?.color !== us)
+      if (!carrierPiece || carrierPiece.color !== us || !carrierPiece.carried) {
+        // Should not happen if deployState is valid, but good to check
+        console.error('Invalid deploy state detected.')
+        this._deployState = null // Clear invalid state
+        // Proceed to normal move generation? Or return empty? Let's return empty.
         return []
-      startSq = endSq = sq
-    }
-
-    for (let from = startSq; from <= endSq; from++) {
-      if (!isSquareOnBoard(from)) continue // Skip squares not on the 11x12 board
-
-      const pieceData = this._board[from]
-      if (!pieceData || pieceData.color !== us) continue
-      if (piece && pieceData.type !== piece) continue
-
-      const pieceType = pieceData.type
-      const isHero = this.isHeroic(from)
-      const moveOffsets = PIECE_OFFSETS[pieceType]
-
-      if (!moveOffsets) continue // Should not happen if all pieces are defined
-
-      // --- Determine Movement Properties based on piece and heroic status ---
-      let moveRange = 1
-      let canMoveDiagonal = false
-      let isSliding = false
-      let captureRange = 1
-      let captureIgnoresPieceBlocking = false // Specific to blocking by other pieces
-      let moveIgnoresBlocking = false // Ignores pieces and terrain for movement
-
-      // Base ranges/abilities
-      switch (pieceType) {
-        case COMMANDER:
-          isSliding = true
-          moveRange = Infinity
-          captureRange = 1 // Special capture rule
-          canMoveDiagonal = true
-          break
-        case INFANTRY:
-        case ENGINEER:
-        case ANTI_AIR:
-          moveRange = 1
-          captureRange = 1
-          break
-        case TANK:
-          moveRange = 2
-          captureRange = 2
-          isSliding = true
-          break
-        case MILITIA:
-          moveRange = 1
-          captureRange = 1
-          canMoveDiagonal = true
-          break
-        case ARTILLERY:
-          isSliding = true
-          moveRange = 3
-          captureRange = 3
-          captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
-          canMoveDiagonal = true
-          break
-        case MISSILE:
-          isSliding = true
-          moveRange = 2 // Approximation
-          captureRange = 2 // Approximation
-          captureIgnoresPieceBlocking = true // Can shoot over blocking pieces
-          canMoveDiagonal = true
-          break
-        case AIR_FORCE:
-          isSliding = true
-          moveRange = 4
-          captureRange = 4
-          moveIgnoresBlocking = true // Ignores piece and terrain blocking for move AND capture
-          captureIgnoresPieceBlocking = true // Explicitly ignores piece blocking for capture
-          canMoveDiagonal = true
-          break
-        case NAVY:
-          isSliding = true
-          moveRange = 4 // Base move range
-          captureRange = 4 // Default to maximum range (for torpedo attacks)
-          canMoveDiagonal = true
-          // Navy has two attack mechanisms:
-          // 1. Naval Gun: Range 3, targets land pieces
-          // 2. Torpedo: Range 4, targets other Navy pieces
-          break
-        case HEADQUARTER:
-          moveRange = 0
-          captureRange = 0
-          break
       }
 
-      // Apply Heroic bonus
-      if (isHero) {
-        moveRange++
-        captureRange++
-        canMoveDiagonal = true // All heroic pieces can move diagonally
-        if (pieceType === HEADQUARTER) {
-          // Heroic HQ moves like Militia
-          moveRange = 1
-          captureRange = 1
-          isSliding = false // HQ steps, doesn't slide
+      // Generate Deploy Moves for remaining carried pieces
+      for (const carriedPiece of carrierPiece.carried) {
+        // TODO: Check if filterPiece matches carriedPiece.type
+        if (filterPiece && carriedPiece.type !== filterPiece) continue
+
+        // Assuming carried pieces cannot be heroic for now
+        const deployMoves = this._generateMovesForPiece(
+          stackSquare,
+          carriedPiece,
+          false,
+          true,
+        ) // Pass isDeployMove = true
+        deployMoves.forEach((m) => {
+          m.flags |= BITS.DEPLOY // Add deploy flag
+          allMoves.push(m)
+        })
+      }
+
+      // Generate Carrier Moves
+      // TODO: Check if filterPiece matches carrierPiece.type
+      if (!filterPiece || carrierPiece.type === filterPiece) {
+        const carrierMoves = this._generateMovesForPiece(
+          stackSquare,
+          carrierPiece,
+          this.isHeroic(stackSquare),
+        )
+        allMoves.push(...carrierMoves) // Carrier moves normally (moving the stack)
+      }
+    } else {
+      // --- Normal Move Generation (No Active Deploy State) ---
+      let startSq = 0
+      let endSq = 255 // Iterate over the whole 16x16 internal board
+
+      if (filterSquare) {
+        const sq = SQUARE_MAP[filterSquare]
+        if (
+          sq === undefined ||
+          !this._board[sq] ||
+          this._board[sq]?.color !== us
+        )
+          return []
+        startSq = endSq = sq
+      }
+
+      for (let from = startSq; from <= endSq; from++) {
+        if (!isSquareOnBoard(from)) continue
+
+        const pieceData = this._board[from]
+        if (!pieceData || pieceData.color !== us) continue
+        if (filterPiece && pieceData.type !== filterPiece) continue
+
+        const isHero = this.isHeroic(from)
+
+        // Check if it's a stack
+        if (pieceData.carried && pieceData.carried.length > 0) {
+          // Generate Deploy Moves for carried pieces
+          for (const carriedPiece of pieceData.carried) {
+            // Assuming carried pieces cannot be heroic
+            const deployMoves = this._generateMovesForPiece(
+              from,
+              carriedPiece,
+              false,
+              true,
+            ) // Pass isDeployMove = true
+            deployMoves.forEach((m) => {
+              m.flags |= BITS.DEPLOY // Add deploy flag
+              allMoves.push(m)
+            })
+          }
+          // Generate Carrier Moves (moving the whole stack)
+          const carrierMoves = this._generateMovesForPiece(
+            from,
+            pieceData,
+            isHero,
+          )
+          allMoves.push(...carrierMoves)
+        } else {
+          // Generate moves for a single piece
+          const singleMoves = this._generateMovesForPiece(
+            from,
+            pieceData,
+            isHero,
+          )
+          allMoves.push(...singleMoves)
         }
       }
-
-      const currentOffsets = canMoveDiagonal ? ALL_OFFSETS : ORTHOGONAL_OFFSETS
-
-      // --- Generate Moves based on Offsets and Rules ---
-      if (pieceType === MISSILE) {
-        // TODO: Implement Missile's specific movement pattern generation
-        console.warn('Missile movement not fully implemented.')
-      } else {
-        // Standard offset iteration for other pieces
-        for (const offset of currentOffsets) {
-          let currentRange = 0
-          let to = from
-          let pieceBlockedMovement = false // Track if movement path is blocked by a piece
-          let terrainBlockedMovement = false // Track if movement path is blocked by terrain
-
-          while (true) {
-            // Loop for sliding pieces or single step
-            to += offset
-            currentRange++
-
-            if (!isSquareOnBoard(to)) break // Off the 11x12 board
-            if (currentRange > moveRange && currentRange > captureRange) break // Exceeded both move and capture range
-
-            const targetPiece = this._board[to]
-            const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(
-              pieceType,
-            )
-
-            // --- Terrain Blocking Check (Movement Only) ---
-            if (!moveIgnoresBlocking) {
-              // Rely on the flag now
-              if (pieceType === NAVY) {
-                // Navy can only MOVE onto NAVY_MASK squares
-                if (!NAVY_MASK[to]) {
-                  terrainBlockedMovement = true
-                }
-              } else if (LAND_MASK[from]) {
-                // Assuming non-Navy are land pieces for this check
-                // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
-                if (!LAND_MASK[to]) {
-                  terrainBlockedMovement = true
-                }
-                // Heavy piece river crossing rule (Movement Only)
-                if (isHeavyPiece && !terrainBlockedMovement) {
-                  const zoneFrom = this.isHeavyZone(from)
-                  const zoneTo = this.isHeavyZone(to)
-                  if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
-                    const isCrossingBridge = this.isBridgeCrossing(from, to)
-                    if (!isCrossingBridge) {
-                      // Cannot cross river unless via bridge (movement)
-                      terrainBlockedMovement = true
-                    }
-                  }
-                }
-              }
-            }
-            // Note: Terrain blocking for *capture targeting* is ignored per rules.
-
-            // --- Target Square Analysis ---
-            let canMoveToSquare = !terrainBlockedMovement // Assume can move unless terrain blocked
-
-            if (targetPiece) {
-              // --- Capture Logic ---
-              if (targetPiece.color === them && currentRange <= captureRange) {
-                let captureAllowed = true
-                let addNormalCapture = true
-                let addStayCapture = false
-
-                // Commander captures only adjacent
-                if (pieceType === COMMANDER && currentRange > 1) {
-                  captureAllowed = false
-                }
-
-                // Navy attack mechanisms & Stay Capture Rule
-                if (pieceType === NAVY) {
-                  if (targetPiece.type === NAVY) {
-                    // Torpedo attack: Range 4 (5 if heroic)
-                    if (currentRange > (isHero ? 5 : 4)) {
-                      captureAllowed = false
-                    }
-                  } else {
-                    // Naval Gun attack: Range 3 (4 if heroic)
-                    if (currentRange > (isHero ? 4 : 3)) {
-                      captureAllowed = false
-                    }
-                  }
-                }
-
-                // Check if path is blocked by PIECES for capture
-                if (
-                  captureAllowed &&
-                  !captureIgnoresPieceBlocking && // Check piece blocking flag
-                  pieceBlockedMovement // Check if movement path was blocked by a piece
-                ) {
-                  // Tank special case: can capture at range 2 even if blocked at 1
-                  if (pieceType === TANK && currentRange === 2) {
-                    // Allow capture if the blocking piece was at range 1
-                    // Need to check if the *specific* blocking piece was at range 1
-                    // This requires tracking the blocking square, complex.
-                    // Simpler: Assume Tank can capture at range 2 if path was blocked earlier.
-                    captureAllowed = true
-                  } else {
-                    captureAllowed = false // Blocked by piece for capture
-                  }
-                }
-                // Note: Terrain blocking for capture targeting is ignored per rules.
-
-                // NEW: Check if a normal capture would land on invalid terrain for the attacker
-                if (captureAllowed && addNormalCapture) {
-                  // Use flag
-                  const isTargetTerrainValidForAttacker =
-                    pieceType === NAVY ? NAVY_MASK[to] : LAND_MASK[to]
-                  if (!isTargetTerrainValidForAttacker) {
-                    // Force stay capture if target terrain is invalid for attacker's movement
-                    addNormalCapture = false
-                    addStayCapture = true
-                  }
-                }
-
-                if (captureAllowed) {
-                  if (addNormalCapture) {
-                    addMove(
-                      moves,
-                      us,
-                      from,
-                      to,
-                      pieceType,
-                      targetPiece.type,
-                      BITS.CAPTURE,
-                    )
-                  }
-                  if (addStayCapture) {
-                    // For stay capture, 'to' stores the *target* square
-                    addMove(
-                      moves,
-                      us,
-                      from,
-                      to, // 'to' is the target square
-                      pieceType,
-                      targetPiece.type,
-                      BITS.CAPTURE | BITS.STAY_CAPTURE,
-                    )
-                  }
-                }
-              } // End capture check (if targetPiece.color === them)
-
-              // --- Piece Blocking Check (Movement) ---
-              if (!moveIgnoresBlocking) {
-                // Use flag
-                // Navy ignores FRIENDLY piece blocking
-                if (!(pieceType === NAVY && targetPiece.color === us)) {
-                  pieceBlockedMovement = true // Mark path as blocked for further movement
-                }
-              }
-
-              // If piece cannot capture over other pieces, stop checking this direction
-              if (!captureIgnoresPieceBlocking && pieceType !== TANK) {
-                // If movement is blocked by a piece, and the current piece
-                // cannot shoot over pieces (and isn't a Tank), stop.
-                if (pieceBlockedMovement) break
-              }
-              // Otherwise (can shoot over pieces or is Tank), continue checking
-              // for captures further along the path.
-            } else {
-              // --- Move to Empty Square Logic ---
-              // Check movement range AND terrain/piece blocking
-              if (
-                currentRange <= moveRange &&
-                canMoveToSquare && // Use the flag determined above
-                !pieceBlockedMovement
-              ) {
-                addMove(moves, us, from, to, pieceType)
-              }
-            }
-
-            // --- Loop Termination/Continuation Logic ---
-
-            // 1. Stop if not a sliding piece (already handled the single step)
-            if (!isSliding) break
-
-            // 2. Stop ONLY if path is blocked by a piece AND the current piece cannot capture over other pieces.
-            //    Terrain blocking does NOT stop the loop for sliding pieces checking for captures.
-            if (
-              pieceBlockedMovement &&
-              !captureIgnoresPieceBlocking &&
-              !moveIgnoresBlocking
-            ) {
-              break
-            }
-            // Note: Terrain blocking (`terrainBlockedMovement`) does NOT break the loop here.
-            // It only prevents adding a NORMAL move onto the blocked square.
-            // Sliding pieces continue checking subsequent squares for CAPTURES even if terrain blocks movement onto intermediate squares.
-          } // End while loop for sliding range
-        } // End for loop over offsets
-      } // End else block (non-Missile pieces)
-    } // End for loop over board squares
-
-    // TODO: Implement promotion check/flagging after generating moves
-    // TODO: Implement last piece auto-promotion check
+    }
 
     // Filter illegal moves (leaving commander in check)
     if (legal && !ignoreSafety) {
       // Only check commander safety if we're not ignoring it
       const legalMoves: InternalMove[] = []
-      for (const move of moves) {
+      // Operate on the collected allMoves array
+      for (const move of allMoves) {
         this._makeMove(move)
         if (!this._isKingAttacked(us)) {
           legalMoves.push(move)
@@ -901,7 +1160,8 @@ export class CoTuLenh {
       }
       return legalMoves
     }
-    return moves
+    // Return all pseudo-legal moves if not checking legality
+    return allMoves
   }
 
   // Public moves method (formats output)
@@ -983,6 +1243,7 @@ export class CoTuLenh {
       halfMoves: this._halfMoves,
       moveNumber: this._moveNumber,
       heroicStatus: { ...this._heroicStatus },
+      deployState: this._deployState, // Snapshot deploy state before move
     }
     this._history.push(historyEntry)
 
@@ -1131,6 +1392,8 @@ export class CoTuLenh {
     this._moveNumber = old.moveNumber
     // Restore heroic status snapshot - this is crucial
     this._heroicStatus = { ...old.heroicStatus }
+    // Restore deploy state
+    this._deployState = old.deployState
 
     // --- Revert Board Changes ---
     const movedPieceType = move.piece
