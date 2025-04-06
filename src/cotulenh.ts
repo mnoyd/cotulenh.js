@@ -904,32 +904,6 @@ export class CoTuLenh {
     return moves
   }
 
-  // Helper to check if path is blocked (excluding destination square)
-  private _isPathBlocked(
-    from: number,
-    to: number,
-    offset: number,
-    isCapture: boolean,
-  ): boolean {
-    // Air Force ignores blocking
-    const pieceType: PieceSymbol | undefined = this._board[from]?.type
-    if (!pieceType) return false // Should not happen
-    if (pieceType === AIR_FORCE) return false
-    // Artillery and Missile ignore blocking only for capture
-    if (isCapture && [ARTILLERY, MISSILE].includes(pieceType)) return false
-
-    let current = from + offset
-    while (current !== to) {
-      if (!isSquareOnBoard(current)) return true // Should not happen if 'to' is on board
-
-      // Only check for blocking pieces, terrain path checks removed
-      if (this._board[current]) return true // Blocked by any piece
-
-      current += offset
-    }
-    return false
-  }
-
   // Public moves method (formats output)
   moves({
     verbose = false,
