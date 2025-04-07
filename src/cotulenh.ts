@@ -628,7 +628,8 @@ export class CoTuLenh {
       type,
       color,
       heroic = false,
-    }: { type: PieceSymbol; color: Color; heroic?: boolean },
+      carried = undefined, // Add optional carried pieces
+    }: { type: PieceSymbol; color: Color; heroic?: boolean; carried?: Piece[] },
     square: Square,
   ): boolean {
     if (!(square in SQUARE_MAP)) return false
@@ -656,7 +657,12 @@ export class CoTuLenh {
       this._setHeroic(sq, false)
     }
 
-    this._board[sq] = { type, color }
+    // Place the piece or stack
+    this._board[sq] = {
+      type,
+      color,
+      carried: carried?.length ? carried : undefined,
+    }
     if (type === COMMANDER) this._kings[color] = sq
     if (heroic) this._setHeroic(sq, true)
 
@@ -1230,7 +1236,7 @@ export class CoTuLenh {
     return path.filter((sq) => sq !== from) // Exclude starting square
   }
 
-  // --- Move Execution/Undo (Updated for Stay Capture) ---
+  // --- Move Execution/Undo (Updated for Stay Capture & Deploy) ---
   private _makeMove(move: InternalMove) {
     const us = this.turn()
     const them = swapColor(us)
@@ -1243,90 +1249,175 @@ export class CoTuLenh {
       halfMoves: this._halfMoves,
       moveNumber: this._moveNumber,
       heroicStatus: { ...this._heroicStatus },
-      deployState: this._deployState, // Snapshot deploy state before move
+      deployState: this._deployState, // Snapshot deploy state *before* this move
     }
     this._history.push(historyEntry)
 
     // --- Update Board ---
-    const pieceToMove = this._board[move.from] // Piece being moved
-    if (!pieceToMove) {
-      console.error(
-        'Attempting to move from empty square:',
-        algebraic(move.from),
-      )
-      this._history.pop() // Remove invalid history entry
-      return // Should not happen
-    }
-    const pieceWasHeroic = this.isHeroic(move.from) // Status before move
+    let pieceThatMoved: Piece | undefined = undefined // Track the piece whose action determines clock/turn
+    let finalSq: number // Track the final square for promotion checks
 
-    // Handle Stay Capture vs Normal Capture/Move
-    if (move.flags & BITS.STAY_CAPTURE) {
-      const targetSq = move.to // 'to' stores the target square in this special case
-      const capturedPiece = this._board[targetSq] // For clock reset check
-      if (!capturedPiece || capturedPiece.color !== them) {
+    if (move.flags & BITS.DEPLOY) {
+      // --- Handle Deploy Move ---
+      const carrierPiece = this._board[move.from]
+      if (!carrierPiece || !carrierPiece.carried) {
         console.error(
-          'Stay capture target square is empty or has own piece:',
-          algebraic(targetSq),
+          'Deploy move from non-stack or empty stack:',
+          algebraic(move.from),
+        )
+        this._history.pop()
+        return // Invalid state
+      }
+      // Find the deployed piece in the carried array
+      const deployIndex = carrierPiece.carried.findIndex(
+        (p) => p.type === move.piece && p.color === us,
+      )
+      if (deployIndex === -1) {
+        console.error(
+          'Deployed piece not found in carrier:',
+          algebraic(move.from),
+          move.piece,
+        )
+        this._history.pop()
+        return // Invalid state
+      }
+      // Remove the piece from carried array and prepare it for placement
+      pieceThatMoved = carrierPiece.carried.splice(deployIndex, 1)[0]
+      if (carrierPiece.carried.length === 0) {
+        carrierPiece.carried = undefined // Clear array if empty
+      }
+
+      // Handle placement (including stay capture for deploy)
+      if (move.flags & BITS.STAY_CAPTURE) {
+        const targetSq = move.to // Target square
+        const capturedPieceData = this._board[targetSq]
+        if (!capturedPieceData || capturedPieceData.color !== them) {
+          console.error(
+            'Deploy stay capture target square invalid:',
+            algebraic(targetSq),
+          )
+          this._history.pop()
+          return // Invalid state
+        }
+        delete this._board[targetSq]
+        if (this.isHeroic(targetSq)) this._setHeroic(targetSq, false)
+        move.captured = capturedPieceData.type
+        // Deployed piece stays with carrier, so finalSq is carrier's square
+        finalSq = move.from
+        // Put the deployed piece back into the carrier temporarily for promotion check? No, check the piece itself.
+      } else {
+        // Normal deploy placement
+        const destSq = move.to
+        const capturedPieceData = this._board[destSq]
+        if (move.flags & BITS.CAPTURE) {
+          if (!capturedPieceData || capturedPieceData.color !== them) {
+            console.error(
+              'Deploy capture destination square invalid:',
+              algebraic(destSq),
+            )
+            this._history.pop()
+            return // Invalid state
+          }
+          delete this._board[destSq]
+          if (this.isHeroic(destSq)) this._setHeroic(destSq, false)
+          move.captured = capturedPieceData.type
+        }
+        this._board[destSq] = pieceThatMoved // Place deployed piece
+        // Heroic status of deployed piece? Assume non-heroic for now.
+        finalSq = destSq
+      }
+      // Set deploy state for next move generation
+      this._deployState = { stackSquare: move.from, turn: us }
+    } else {
+      // --- Handle Normal Move or Carrier Move ---
+      pieceThatMoved = this._board[move.from] // The piece/stack being moved
+      if (!pieceThatMoved) {
+        console.error(
+          'Attempting to move from empty square:',
+          algebraic(move.from),
         )
         this._history.pop() // Remove invalid history entry
         return // Should not happen
       }
-      delete this._board[targetSq]
-      // Remove heroic status of captured piece
-      if (this.isHeroic(targetSq)) this._setHeroic(targetSq, false)
-      move.captured = capturedPiece.type // Ensure captured type is set
-      // The moving piece stays at move.from, its heroic status remains unchanged (handled by history restore)
-    } else {
-      // Normal move/capture
-      const destSq = move.to
-      const capturedPiece = this._board[destSq] // Check destination for capture
+      const pieceWasHeroic = this.isHeroic(move.from) // Status of carrier/single piece
 
-      delete this._board[move.from]
-      // Remove heroic status from source square (will be reapplied if needed)
-      if (pieceWasHeroic) this._setHeroic(move.from, false)
-
-      // Place piece at destination
-      this._board[destSq] = pieceToMove
-      // Apply heroic status if it was heroic
-      if (pieceWasHeroic) this._setHeroic(destSq, true)
-
-      // Handle captured piece
-      if (move.flags & BITS.CAPTURE) {
+      // Handle Stay Capture vs Normal Capture/Move
+      if (move.flags & BITS.STAY_CAPTURE) {
+        const targetSq = move.to // 'to' stores the target square in this special case
+        const capturedPiece = this._board[targetSq] // For clock reset check
         if (!capturedPiece || capturedPiece.color !== them) {
           console.error(
-            'Normal capture destination square is empty or has own piece:',
-            algebraic(destSq),
+            'Stay capture target square is empty or has own piece:',
+            algebraic(targetSq),
           )
-          // Allow overwriting own piece? No, standard rules usually forbid.
-          // Let's assume the move generation prevents this. If it happens, it's an error.
-          // We might need to revert if this error occurs.
-        } else {
-          move.captured = capturedPiece.type // Set captured type
-          // Remove heroic status of captured piece if it existed
-          if (this.isHeroic(destSq) && !pieceWasHeroic) {
-            // If a non-heroic piece captures a heroic piece, the heroic status is lost
-            // This logic seems complex - does capturing a hero remove the capturer's hero status?
-            // Assuming the captured piece's status is simply removed.
-            // The capturer's status (pieceWasHeroic) is reapplied above.
-            // Let's simplify: just ensure the destination square has the correct final status.
-            if (!pieceWasHeroic) this._setHeroic(destSq, false) // Ensure non-heroic if capturer wasn't heroic
+          this._history.pop() // Remove invalid history entry
+          return // Should not happen
+        }
+        delete this._board[targetSq]
+        // Remove heroic status of captured piece
+        if (this.isHeroic(targetSq)) this._setHeroic(targetSq, false)
+        move.captured = capturedPiece.type // Ensure captured type is set
+        // The moving piece stays at move.from
+        finalSq = move.from
+      } else {
+        // Normal move/capture (could be single piece or carrier moving stack)
+        const destSq = move.to
+        const capturedPieceData = this._board[destSq] // Check destination for capture
+
+        delete this._board[move.from]
+        // Remove heroic status from source square (will be reapplied if needed)
+        if (pieceWasHeroic) this._setHeroic(move.from, false)
+
+        // Place piece/stack at destination
+        this._board[destSq] = pieceThatMoved
+        // Apply heroic status if it was heroic
+        if (pieceWasHeroic) this._setHeroic(destSq, true)
+        finalSq = destSq
+
+        // Handle captured piece
+        if (move.flags & BITS.CAPTURE) {
+          if (!capturedPieceData || capturedPieceData.color !== them) {
+            console.error(
+              'Normal capture destination square is empty or has own piece:',
+              algebraic(destSq),
+            )
+            // Allow overwriting own piece? No, standard rules usually forbid.
+            this._history.pop() // Revert history
+            return // Invalid state
+          } else {
+            move.captured = capturedPieceData.type // Set captured type
+            // Remove heroic status of captured piece if it existed
+            if (this.isHeroic(destSq) && !pieceWasHeroic) {
+              // If a non-heroic piece captures a heroic piece, the heroic status is lost
+              // This logic seems complex - does capturing a hero remove the capturer's hero status?
+              // Assuming the captured piece's status is simply removed.
+              // The capturer's status (pieceWasHeroic) is reapplied above.
+              // Let's simplify: just ensure the destination square has the correct final status.
+              if (!pieceWasHeroic) this._setHeroic(destSq, false) // Ensure non-heroic if capturer wasn't heroic
+            } else if (this.isHeroic(destSq)) {
+              // Ensure heroic status is removed from captured piece regardless of capturer status
+              this._setHeroic(destSq, false)
+            }
           }
         }
-      }
 
-      // Update commander position if moved
-      if (pieceToMove.type === COMMANDER) {
-        this._kings[us] = destSq
+        // Update commander position if moved
+        if (pieceThatMoved.type === COMMANDER) {
+          this._kings[us] = destSq
+        }
       }
+      // Clear deploy state after a normal/carrier move
+      this._deployState = null
     }
 
     // --- Update Clocks ---
     // Reset half move counter if capture or infantry/militia/engineer move (pawn-like)
+    // Use pieceThatMoved which represents the piece whose action occurred (deployed piece or carrier/single piece)
     if (
       move.flags & BITS.CAPTURE ||
-      pieceToMove.type === INFANTRY ||
-      pieceToMove.type === MILITIA ||
-      pieceToMove.type === ENGINEER
+      pieceThatMoved.type === INFANTRY ||
+      pieceThatMoved.type === MILITIA ||
+      pieceThatMoved.type === ENGINEER
     ) {
       this._halfMoves = 0
     } else {
@@ -1334,15 +1425,15 @@ export class CoTuLenh {
     }
 
     // Increment move number if Blue moved
-    if (us === BLUE) {
+    if (us === BLUE && !(move.flags & BITS.DEPLOY)) {
+      // Only increment if not a deploy move by blue
       this._moveNumber++
     }
 
     // --- Handle Promotion ---
     // Check if this move grants heroic status
     let becameHeroic = false
-    // Determine the square where the piece *ended up*
-    const finalSq = move.flags & BITS.STAY_CAPTURE ? move.from : move.to
+    // Use finalSq determined above
     const pieceAtFinalSq = this._board[finalSq] // Get the piece that ended up there
 
     // Check for promotion conditions (e.g., putting opponent in check)
@@ -1370,8 +1461,11 @@ export class CoTuLenh {
       this._setHeroic(finalSq, true)
     }
 
-    // --- Switch Turn ---
-    this._turn = them
+    // --- Switch Turn (or maintain for deploy) ---
+    if (!(move.flags & BITS.DEPLOY)) {
+      this._turn = them // Switch turn only for non-deploy moves
+    }
+    // If it was a deploy move, turn remains `us`
 
     // TODO: Update position count for threefold repetition
     // this._incPositionCount(this.fen());
@@ -1396,33 +1490,122 @@ export class CoTuLenh {
     this._deployState = old.deployState
 
     // --- Revert Board Changes ---
-    const movedPieceType = move.piece
+    const movedPieceType = move.piece // Type of the piece that moved/deployed
 
-    if (move.flags & BITS.STAY_CAPTURE) {
-      // Restore captured piece without moving the piece that stayed
+    if (move.flags & BITS.DEPLOY) {
+      // --- Undo Deploy Move ---
+      const carrierPiece = this._board[move.from]
+      if (!carrierPiece) {
+        // This implies the carrier itself moved after deploy, which shouldn't happen in the same history entry?
+        // Or maybe the carrier was captured? This needs careful state restoration.
+        // For now, assume carrier is still there.
+        console.error(
+          'Cannot undo deploy: Carrier missing at',
+          algebraic(move.from),
+        )
+        // Attempt to restore carrier based on history? Complex.
+        return null // Cannot reliably undo
+      }
+
+      // The piece that was deployed
+      let deployedPiece: Piece | undefined = undefined
+
+      if (move.flags & BITS.STAY_CAPTURE) {
+        // Deployed piece performed stay capture, it wasn't placed on board
+        deployedPiece = { type: movedPieceType, color: us } // Recreate the piece
+        // Restore captured piece at target square
+        const targetSq = move.to
+        if (move.captured) {
+          // Need to know if the captured piece was heroic
+          // We lost this info, assume non-heroic for now
+          this._board[targetSq] = { type: move.captured, color: them }
+          // Restore heroic status if it was in the snapshot
+          if (old.heroicStatus[targetSq]) {
+            this._setHeroic(targetSq, true)
+          }
+        }
+      } else {
+        // Normal deploy, piece was placed on board
+        const destSq = move.to
+        deployedPiece = this._board[destSq] // Get the piece from destination
+        if (!deployedPiece || deployedPiece.type !== movedPieceType) {
+          console.error(
+            'Cannot undo deploy: Deployed piece missing/mismatch at',
+            algebraic(destSq),
+          )
+          return null // Cannot reliably undo
+        }
+        delete this._board[destSq] // Remove from destination
+
+        // Restore captured piece if any
+        if (move.captured) {
+          this._board[destSq] = { type: move.captured, color: them }
+          if (old.heroicStatus[destSq]) {
+            this._setHeroic(destSq, true)
+          }
+        }
+      }
+
+      // Add deployed piece back to carrier
+      if (deployedPiece) {
+        if (!carrierPiece.carried) {
+          carrierPiece.carried = []
+        }
+        // Ensure not adding duplicates if undoing multiple times rapidly?
+        // Check if already present (shouldn't be necessary with correct state management)
+        if (
+          !carrierPiece.carried.some(
+            (p) =>
+              p.type === deployedPiece!.type &&
+              p.color === deployedPiece!.color,
+          )
+        ) {
+          carrierPiece.carried.push(deployedPiece)
+        }
+      }
+    } else if (move.flags & BITS.STAY_CAPTURE) {
+      // --- Undo Normal Stay Capture ---
+      // Piece that moved stayed at move.from, just restore captured
       const targetSq = move.to // Target square is stored in 'to'
       if (move.captured) {
         this._board[targetSq] = { type: move.captured, color: them }
-        // Heroic status of captured piece is restored by the snapshot restore above
+        if (old.heroicStatus[targetSq]) {
+          this._setHeroic(targetSq, true)
+        }
       } else {
         // This case should ideally not happen for a capture flag
         delete this._board[targetSq]
       }
-      // The piece at move.from was not moved, its state is restored by snapshot
+      // The piece at move.from was not moved, its state is restored by heroicStatus snapshot
     } else {
-      // Revert normal move/capture
-      const pieceThatMoved: Piece = { type: movedPieceType, color: us }
-      this._board[move.from] = pieceThatMoved // Move piece back
+      // --- Undo Normal Move/Capture (Single piece or Carrier) ---
+      const pieceThatMoved = this._board[move.to] // Get the piece/stack from destination
+      if (!pieceThatMoved || pieceThatMoved.type !== movedPieceType) {
+        console.error(
+          'Cannot undo move: Piece missing/mismatch at destination',
+          algebraic(move.to),
+        )
+        return null
+      }
+
+      delete this._board[move.to] // Remove from destination
+      // Clear heroic at dest if it wasn't heroic before (restored from snapshot below)
+      if (this.isHeroic(move.to) && !old.heroicStatus[move.to]) {
+        this._setHeroic(move.to, false)
+      }
+
+      this._board[move.from] = pieceThatMoved // Move piece/stack back
+      // Restore heroic at source from snapshot
+      if (old.heroicStatus[move.from]) this._setHeroic(move.from, true)
+      else this._setHeroic(move.from, false) // Ensure it's cleared if it wasn't heroic
 
       // Restore captured piece if any
       if (move.captured) {
         this._board[move.to] = { type: move.captured, color: them }
-        // Heroic status of captured piece restored by snapshot
-      } else {
-        delete this._board[move.to] // Clear destination if it was empty
+        if (old.heroicStatus[move.to]) {
+          this._setHeroic(move.to, true)
+        }
       }
-      // Heroic status of the moved piece at its original square (move.from) restored by snapshot
-      // Heroic status at the destination square (move.to) restored by snapshot (or cleared if empty)
     }
 
     // TODO: Decrement position count
@@ -1490,26 +1673,51 @@ export class CoTuLenh {
     )
   }
 
-  // --- SAN Parsing/Generation (Updated for Stay Capture) ---
+  // --- SAN Parsing/Generation (Updated for Stay Capture & Deploy) ---
   private _moveToSan(move: InternalMove, moves: InternalMove[]): string {
-    // Basic placeholder, needs proper ambiguity checks, capture notation, check/mate symbols
     const pieceChar = move.piece.toUpperCase()
     const fromAlg = algebraic(move.from)
     let toAlg: string
-    let capture = ''
-    let stayMarker = '' // Marker for stay capture, e.g., '=' or 's'
+    let san = ''
 
-    if (move.flags & BITS.STAY_CAPTURE) {
-      toAlg = algebraic(move.to) // Target square for stay capture
-      capture = 'x'
-      stayMarker = '=' // Use '=' to denote stay capture in SAN? Needs confirmation.
+    // Heroic status determination is complex here as we need the state *before* the move.
+    // The Move class constructor is better suited, but we'll approximate here for basic SAN.
+    // We check the *current* board state, which is *after* the move for legality checks.
+    // This means heroicPrefix might be wrong if the piece just moved *from* a heroic state.
+    const pieceAtFrom = this._board[move.from] // Might be undefined if piece moved
+    const pieceAtTo = this._board[move.to] // Might be the moved piece or captured piece target
+
+    // Approximation: Check if the piece *involved* in the move was heroic *before* the move.
+    // This requires looking into the history, which is complex here.
+    // Let's use the Move class's logic as a reference for the final SAN string format.
+    const heroicPrefix = '' // Simplified: Assume Move class handles this better
+    const heroicSuffix = move.becameHeroic ? '*' : ''
+
+    if (move.flags & BITS.DEPLOY) {
+      // Deploy Move: (Stack)PieceFrom>To, (Stack)PieceFrom>xTo, (Stack)PieceFrom<Target
+      const stackRep = '(?)' // Placeholder - needs previous state info
+      if (move.flags & BITS.STAY_CAPTURE) {
+        toAlg = algebraic(move.to) // Target square
+        san = `${stackRep}${pieceChar}${fromAlg}<${toAlg}${heroicSuffix}`
+      } else {
+        toAlg = algebraic(move.to) // Destination square
+        const separator = move.flags & BITS.CAPTURE ? '>x' : '>'
+        san = `${stackRep}${pieceChar}${fromAlg}${separator}${toAlg}${heroicSuffix}`
+      }
+    } else if (move.flags & BITS.STAY_CAPTURE) {
+      // Normal Stay Capture: PieceFrom<Target
+      toAlg = algebraic(move.to) // Target square
+      // Heroic prefix should reflect status of piece at 'from' before move
+      const approxHeroicBefore = this.isHeroic(move.from) ? '*' : '' // Approximation
+      san = `${approxHeroicBefore}${pieceChar}${fromAlg}<${toAlg}${heroicSuffix}`
     } else {
+      // Normal Move/Capture: PieceFrom-To or PieceFromxTo
       toAlg = algebraic(move.to) // Destination square
-      if (move.flags & BITS.CAPTURE) capture = 'x'
+      const separator = move.flags & BITS.CAPTURE ? 'x' : '-'
+      // Heroic prefix should reflect status of piece at 'from' before move
+      const approxHeroicBefore = this.isHeroic(move.from) ? '*' : '' // Approximation
+      san = `${approxHeroicBefore}${pieceChar}${fromAlg}${separator}${toAlg}${heroicSuffix}`
     }
-
-    const heroicBefore = this._heroicStatus[move.from] // Check status *before* move for SAN
-    const heroicAfter = move.becameHeroic ? '*' : '' // Check if it became heroic *on* this move
 
     // TODO: Add ambiguity resolution (e.g., Taf1-f3 vs Tbf1-f3)
     // Need to check if other pieces of the same type can move to the same square
@@ -1519,69 +1727,120 @@ export class CoTuLenh {
 
     // TODO: Add check/mate symbols (+/#) by temporarily making move and checking state
 
-    return `${heroicBefore ? '*' : ''}${pieceChar}${disambiguator}${fromAlg}${capture}${toAlg}${stayMarker}${heroicAfter}`
+    return san // Return the generated SAN string
   }
 
   private _moveFromSan(move: string, strict = false): InternalMove | null {
-    // TODO: Implement robust SAN parsing based on rules and ambiguity, including stay capture marker
-    console.warn('_moveFromSan not fully implemented for stay captures')
-    // Very basic parsing: e.g., "Cf1-f3" or "*Cf1xf3*" or "*Nf1xf3=*" (Stay capture)
-    const san = move.replace(/[+#*?!]/g, '') // Strip check/mate/heroic markers for basic parsing
-    const stayCaptureMarker = '=' // Assuming '=' denotes stay capture
-    const isStay = san.endsWith(stayCaptureMarker)
-    const cleanSan = isStay ? san.slice(0, -1) : san
+    // Strip extras like check/mate symbols, heroic markers for basic parsing
+    const cleanMove = move.replace(/[+#*?!]/g, '')
 
-    // Regex needs update for optional disambiguator and stay marker handling
-    const parts = cleanSan.match(
-      // Basic: Piece, From, Capture?, To
-      /^([CIITMEAGSFNH])?([a-k](?:1[0-2]|[1-9]))([x-])([a-k](?:1[0-2]|[1-9]))$/i,
-    )
+    // Regex to handle different formats:
+    // 1. Normal: Pf1-f3, Pf1xf3
+    // 2. Stay Capture: Pf1<f3
+    // 3. Deploy: (Stack)Pf1>f3, (Stack)Pf1>xf3
+    // 4. Deploy Stay Capture: (Stack)Pf1<f3
+    const deployStackRegex =
+      /^(\(\?*\))?([CIITMEAGSFNH])([a-k](?:1[0-2]|[1-9]))([>x<])([a-k](?:1[0-2]|[1-9]))$/i
+    const normalMoveRegex =
+      /^([CIITMEAGSFNH])?([a-k](?:1[0-2]|[1-9]))([x<-])([a-k](?:1[0-2]|[1-9]))$/i
+    // Note: Ambiguity resolution (e.g., Nbf1 vs Ndf1) is NOT handled here yet.
 
-    if (parts) {
-      const pieceType = (parts[1] || '').toLowerCase() as PieceSymbol // Infer piece if missing? Risky.
-      const fromAlg = parts[2] as Square
-      const separator = parts[3]
-      const toAlg = parts[4] as Square // This is the target/destination square
-      const isCapture = separator === 'x'
+    let parsed: {
+      stack?: string
+      piece?: PieceSymbol
+      from: Square
+      separator: string
+      to: Square
+    } | null = null
 
-      const fromSq = SQUARE_MAP[fromAlg]
-      const toSq = SQUARE_MAP[toAlg] // Target/Destination square index
-      if (fromSq === undefined || toSq === undefined) return null
-
-      // Find the matching move among legal moves
-      const candidateMoves = this._moves({
-        legal: true,
-        square: fromAlg, // Filter by starting square
-      })
-
-      for (const m of candidateMoves) {
-        // Check if piece type matches (if provided in SAN)
-        if (pieceType && m.piece !== pieceType) continue
-
-        const moveIsStay = (m.flags & BITS.STAY_CAPTURE) !== 0
-        const moveIsNormalCapture =
-          (m.flags & BITS.CAPTURE) !== 0 && !moveIsStay
-        const moveIsNormalMove = !(m.flags & BITS.CAPTURE)
-
-        // Match based on SAN components
-        if (isStay && moveIsStay && m.to === toSq) {
-          // Stay capture: SAN 'to' matches internal 'to' (target)
-          return m
-        } else if (
-          !isStay &&
-          isCapture &&
-          moveIsNormalCapture &&
-          m.to === toSq
-        ) {
-          // Normal capture: SAN 'to' matches internal 'to' (destination)
-          return m
-        } else if (!isStay && !isCapture && moveIsNormalMove && m.to === toSq) {
-          // Normal move: SAN 'to' matches internal 'to' (destination)
-          return m
+    const deployMatch = cleanMove.match(deployStackRegex)
+    if (deployMatch) {
+      parsed = {
+        stack: deployMatch[1], // Optional stack representation (currently ignored)
+        piece: deployMatch[2].toLowerCase() as PieceSymbol,
+        from: deployMatch[3] as Square,
+        separator: deployMatch[4], // '>', '>x', '<'
+        to: deployMatch[5] as Square,
+      }
+    } else {
+      const normalMatch = cleanMove.match(normalMoveRegex)
+      if (normalMatch) {
+        parsed = {
+          piece: (normalMatch[1] || '').toLowerCase() as PieceSymbol, // Piece type might be missing for pawns/infantry
+          from: normalMatch[2] as Square,
+          separator: normalMatch[3], // '-', 'x', '<'
+          to: normalMatch[4] as Square,
         }
       }
     }
-    return null // Failed to parse or find match
+
+    if (!parsed) {
+      return null // Could not parse
+    }
+
+    const fromSq = SQUARE_MAP[parsed.from]
+    const toSq = SQUARE_MAP[parsed.to] // Destination or Target square
+    if (fromSq === undefined || toSq === undefined) return null
+
+    // Determine expected flags based on separator
+    let expectedFlags = 0
+    let isDeploy = false
+    if (parsed.separator === '>' || parsed.separator === '>x') {
+      expectedFlags =
+        BITS.DEPLOY | (parsed.separator === '>x' ? BITS.CAPTURE : 0)
+      isDeploy = true
+    } else if (parsed.separator === '<') {
+      expectedFlags = BITS.STAY_CAPTURE | BITS.CAPTURE // Stay capture always implies capture
+      isDeploy = !!parsed.stack // Check if stack prefix exists
+      if (isDeploy) expectedFlags |= BITS.DEPLOY
+    } else if (parsed.separator === 'x') {
+      expectedFlags = BITS.CAPTURE
+    } else {
+      expectedFlags = BITS.NORMAL
+    }
+
+    // Find the matching move among legal moves for the source square
+    const candidateMoves = this._moves({
+      legal: true,
+      square: parsed.from, // Filter by starting square
+    })
+
+    for (const m of candidateMoves) {
+      // Check piece type (must match if provided in SAN, especially for deploy)
+      if (parsed.piece && m.piece !== parsed.piece) continue
+
+      // Check flags match the parsed separator type
+      const isMoveDeploy = (m.flags & BITS.DEPLOY) !== 0
+      const isMoveStayCapture = (m.flags & BITS.STAY_CAPTURE) !== 0
+      const isMoveNormalCapture =
+        (m.flags & BITS.CAPTURE) !== 0 && !isMoveStayCapture
+      const isMoveNormal = !(
+        m.flags &
+        (BITS.CAPTURE | BITS.DEPLOY | BITS.STAY_CAPTURE)
+      )
+
+      if (isDeploy && isMoveDeploy) {
+        if (isMoveStayCapture && parsed.separator === '<' && m.to === toSq)
+          return m // Deploy Stay Capture
+        if (
+          !isMoveStayCapture &&
+          (parsed.separator === '>' || parsed.separator === '>x') &&
+          m.to === toSq
+        ) {
+          // Check capture flag consistency
+          if ((parsed.separator === '>x') === ((m.flags & BITS.CAPTURE) !== 0))
+            return m // Deploy Normal/Capture
+        }
+      } else if (!isDeploy && !isMoveDeploy) {
+        if (isMoveStayCapture && parsed.separator === '<' && m.to === toSq)
+          return m // Normal Stay Capture
+        if (isMoveNormalCapture && parsed.separator === 'x' && m.to === toSq)
+          return m // Normal Capture
+        if (isMoveNormal && parsed.separator === '-' && m.to === toSq) return m // Normal Move
+      }
+    }
+
+    return null // No matching legal move found
   }
 
   // Public move method using SAN or object (Updated for Stay Capture)
