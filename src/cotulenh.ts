@@ -257,8 +257,8 @@ export class Move {
 
     // --- SAN Generation (Placeholder - needs refinement in CoTuLenh class) ---
     const pieceChar = this.piece.toUpperCase()
-    const heroicPrefix = this.heroic ? '*' : '' // Heroic status of the piece moving/deploying
-    const heroicSuffix = this.becameHeroic ? '*' : ''
+    const heroicPrefix = this.heroic ? '+' : '' // Heroic status of the piece moving/deploying
+    const heroicSuffix = this.becameHeroic ? '+' : '' // Update to use '+' for heroic notation
     let san = ''
 
     if (this.isDeploy) {
@@ -266,11 +266,11 @@ export class Move {
       const stackRep = this.stackBefore || '(?)' // Placeholder
       if (flags & BITS.STAY_CAPTURE) {
         const target = algebraic(to) // 'to' is target
-        san = `${stackRep}${pieceChar}${this.from}<${target}${heroicSuffix}`
+        san = `${stackRep}${heroicPrefix}${pieceChar}${this.from}<${target}${heroicSuffix}`
       } else {
         const separator = flags & BITS.CAPTURE ? '>x' : '>'
         const dest = algebraic(to) // 'to' is destination
-        san = `${stackRep}${pieceChar}${this.from}${separator}${dest}${heroicSuffix}`
+        san = `${stackRep}${heroicPrefix}${pieceChar}${this.from}${separator}${dest}${heroicSuffix}`
       }
     } else if (flags & BITS.STAY_CAPTURE) {
       // Normal Stay capture: PieceFrom<Target
@@ -723,10 +723,6 @@ export class CoTuLenh {
     const moves: InternalMove[] = []
     const us = pieceData.color
     const them = swapColor(us)
-    const pieceType = pieceData.type
-    const moveOffsets = PIECE_OFFSETS[pieceType]
-
-    if (!moveOffsets) return [] // Should not happen
 
     // --- Determine Movement Properties based on piece and heroic status ---
     let moveRange = 1
@@ -737,7 +733,7 @@ export class CoTuLenh {
     let moveIgnoresBlocking = false // Ignores pieces and terrain for movement
 
     // Base ranges/abilities
-    switch (pieceType) {
+    switch (pieceData.type) {
       case COMMANDER:
         isSliding = true
         moveRange = Infinity
@@ -802,7 +798,7 @@ export class CoTuLenh {
       moveRange++
       captureRange++
       canMoveDiagonal = true // All heroic pieces can move diagonally
-      if (pieceType === HEADQUARTER) {
+      if (pieceData.type === HEADQUARTER) {
         // Heroic HQ moves like Militia
         moveRange = 1
         captureRange = 1
@@ -829,7 +825,7 @@ export class CoTuLenh {
         if (!isSquareOnBoard(to)) break // Off the 11x12 board
 
         if (
-          pieceType === MISSILE &&
+          pieceData.type === MISSILE &&
           DIAGONAL_OFFSETS.includes(offset) &&
           currentRange > moveRange - 1
         ) {
@@ -839,11 +835,13 @@ export class CoTuLenh {
         if (currentRange > moveRange && currentRange > captureRange) break // Exceeded both move and capture range
 
         const targetPiece = this._board[to]
-        const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(pieceType)
+        const isHeavyPiece = [ARTILLERY, MISSILE, ANTI_AIR].includes(
+          pieceData.type,
+        )
 
         // --- Terrain Blocking Check (Movement Only) ---
         // Rely on the flag now
-        if (pieceType === NAVY) {
+        if (pieceData.type === NAVY) {
           // Navy can only MOVE onto NAVY_MASK squares
           if (!NAVY_MASK[to]) {
             terrainBlockedMovement = true
@@ -853,7 +851,7 @@ export class CoTuLenh {
           // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
           if (!LAND_MASK[to]) {
             terrainBlockedMovement = true
-          } else if (pieceType === AIR_FORCE) {
+          } else if (pieceData.type === AIR_FORCE) {
             // Air Force is land piece but it flies over water as long as the destination is land.
             terrainBlockedMovement = false
           }
@@ -883,12 +881,12 @@ export class CoTuLenh {
             let addStayCapture = false
 
             // Commander captures only adjacent
-            if (pieceType === COMMANDER && currentRange > 1) {
+            if (pieceData.type === COMMANDER && currentRange > 1) {
               captureAllowed = false
             }
 
             // Navy attack mechanisms & Stay Capture Rule
-            if (pieceType === NAVY) {
+            if (pieceData.type === NAVY) {
               if (targetPiece.type === NAVY) {
                 // Torpedo attack: Range 4 (5 if heroic)
                 if (currentRange > (isHero ? 5 : 4)) {
@@ -909,7 +907,7 @@ export class CoTuLenh {
               pieceBlockedMovement // Check if movement path was blocked by a piece
             ) {
               // Tank special case: can capture at range 2 even if blocked at 1
-              if (pieceType === TANK && currentRange === 2) {
+              if (pieceData.type === TANK && currentRange === 2) {
                 // Allow capture if the blocking piece was at range 1
                 // Need to check if the *specific* blocking piece was at range 1
                 // This requires tracking the blocking square, complex.
@@ -925,19 +923,19 @@ export class CoTuLenh {
             if (captureAllowed && addNormalCapture) {
               // Use flag
               const isTargetTerrainValidForAttacker =
-                pieceType === NAVY ? NAVY_MASK[to] : LAND_MASK[to]
+                pieceData.type === NAVY ? NAVY_MASK[to] : LAND_MASK[to]
 
               // Force stay capture if target terrain is invalid for attacker's movement,
               // UNLESS the piece is allowed to stay capture when carried (and this is a deploy move).
               if (!isTargetTerrainValidForAttacker) {
                 if (
                   isDeployMove &&
-                  CAN_STAY_CAPTURE_WHEN_CARRIED.includes(pieceType)
+                  CAN_STAY_CAPTURE_WHEN_CARRIED.includes(pieceData.type)
                 ) {
                   // Allow both normal and stay capture for pieces like Air Force during deploy
                   // if the target terrain is invalid for *movement* but capture is allowed.
                   // However, if AF targets water, it *must* stay capture.
-                  if (pieceType === AIR_FORCE && !LAND_MASK[to]) {
+                  if (pieceData.type === AIR_FORCE && !LAND_MASK[to]) {
                     addNormalCapture = false // Cannot land on water
                     addStayCapture = true
                   } else {
@@ -947,7 +945,7 @@ export class CoTuLenh {
                   }
                 } else if (
                   !isDeployMove &&
-                  pieceType === AIR_FORCE &&
+                  pieceData.type === AIR_FORCE &&
                   !LAND_MASK[to]
                 ) {
                   // Normal Air Force move targeting water must stay capture
@@ -968,7 +966,7 @@ export class CoTuLenh {
                   us,
                   from,
                   to,
-                  pieceType,
+                  pieceData.type,
                   targetPiece.type,
                   BITS.CAPTURE,
                 )
@@ -980,7 +978,7 @@ export class CoTuLenh {
                   us,
                   from,
                   to, // 'to' is the target square
-                  pieceType,
+                  pieceData.type,
                   targetPiece.type,
                   BITS.CAPTURE | BITS.STAY_CAPTURE,
                 )
@@ -992,13 +990,13 @@ export class CoTuLenh {
           if (!moveIgnoresBlocking) {
             // Use flag
             // Navy ignores FRIENDLY piece blocking
-            if (!(pieceType === NAVY && targetPiece.color === us)) {
+            if (!(pieceData.type === NAVY && targetPiece.color === us)) {
               pieceBlockedMovement = true // Mark path as blocked for further movement
             }
           }
 
           // If piece cannot capture over other pieces, stop checking this direction
-          if (!captureIgnoresPieceBlocking && pieceType !== TANK) {
+          if (!captureIgnoresPieceBlocking && pieceData.type !== TANK) {
             // If movement is blocked by a piece, and the current piece
             // cannot shoot over pieces (and isn't a Tank), stop.
             if (pieceBlockedMovement) break
@@ -1013,7 +1011,7 @@ export class CoTuLenh {
             canMoveToSquare && // Use the flag determined above
             !pieceBlockedMovement
           ) {
-            addMove(moves, us, from, to, pieceType)
+            addMove(moves, us, from, to, pieceData.type)
           }
         }
 
@@ -1052,7 +1050,7 @@ export class CoTuLenh {
     ignoreSafety?: boolean
   } = {}): InternalMove[] {
     let allMoves: InternalMove[] = []
-    const us = this._turn
+    const us = this.turn()
     const them = swapColor(us)
 
     // --- Handle Active Deploy State ---
@@ -1378,7 +1376,7 @@ export class CoTuLenh {
         if (pieceWasHeroic) this._setHeroic(destSq, true)
         finalSq = destSq
 
-        // Handle captured piece
+        // Handle captured piece if any
         if (move.flags & BITS.CAPTURE) {
           if (!capturedPieceData || capturedPieceData.color !== them) {
             console.error(
@@ -1494,7 +1492,8 @@ export class CoTuLenh {
     this._deployState = old.deployState
 
     // --- Revert Board Changes ---
-    const movedPieceType = move.piece // Type of the piece that moved/deployed
+    let pieceThatMoved: Piece | undefined = undefined // Track the piece whose action determines clock/turn
+    let finalSq: number // Track the final square for promotion checks
 
     if (move.flags & BITS.DEPLOY) {
       // --- Undo Deploy Move ---
@@ -1516,7 +1515,7 @@ export class CoTuLenh {
 
       if (move.flags & BITS.STAY_CAPTURE) {
         // Deployed piece performed stay capture, it wasn't placed on board
-        deployedPiece = { type: movedPieceType, color: us } // Recreate the piece
+        deployedPiece = { type: move.piece, color: us } // Recreate the piece
         // Restore captured piece at target square
         const targetSq = move.to
         if (move.captured) {
@@ -1532,7 +1531,7 @@ export class CoTuLenh {
         // Normal deploy, piece was placed on board
         const destSq = move.to
         deployedPiece = this._board[destSq] // Get the piece from destination
-        if (!deployedPiece || deployedPiece.type !== movedPieceType) {
+        if (!deployedPiece || deployedPiece.type !== move.piece) {
           console.error(
             'Cannot undo deploy: Deployed piece missing/mismatch at',
             algebraic(destSq),
@@ -1584,7 +1583,7 @@ export class CoTuLenh {
     } else {
       // --- Undo Normal Move/Capture (Single piece or Carrier) ---
       const pieceThatMoved = this._board[move.to] // Get the piece/stack from destination
-      if (!pieceThatMoved || pieceThatMoved.type !== movedPieceType) {
+      if (!pieceThatMoved || pieceThatMoved.type !== move.piece) {
         console.error(
           'Cannot undo move: Piece missing/mismatch at destination',
           algebraic(move.to),
@@ -1694,32 +1693,32 @@ export class CoTuLenh {
     // Approximation: Check if the piece *involved* in the move was heroic *before* the move.
     // This requires looking into the history, which is complex here.
     // Let's use the Move class's logic as a reference for the final SAN string format.
-    const heroicPrefix = '' // Simplified: Assume Move class handles this better
-    const heroicSuffix = move.becameHeroic ? '*' : ''
+    const heroicPrefix = this.isHeroic(move.from) ? '+' : '' // Simplified: Assume Move class handles this better
+    const heroicSuffix = move.becameHeroic ? '+' : ''
 
     if (move.flags & BITS.DEPLOY) {
       // Deploy Move: (Stack)PieceFrom>To, (Stack)PieceFrom>xTo, (Stack)PieceFrom<Target
       const stackRep = '(?)' // Placeholder - needs previous state info
       if (move.flags & BITS.STAY_CAPTURE) {
         toAlg = algebraic(move.to) // Target square
-        san = `${stackRep}${pieceChar}${fromAlg}<${toAlg}${heroicSuffix}`
+        san = `${stackRep}${heroicPrefix}${pieceChar}${fromAlg}<${toAlg}${heroicSuffix}`
       } else {
         toAlg = algebraic(move.to) // Destination square
         const separator = move.flags & BITS.CAPTURE ? '>x' : '>'
-        san = `${stackRep}${pieceChar}${fromAlg}${separator}${toAlg}${heroicSuffix}`
+        san = `${stackRep}${heroicPrefix}${pieceChar}${fromAlg}${separator}${toAlg}${heroicSuffix}`
       }
     } else if (move.flags & BITS.STAY_CAPTURE) {
       // Normal Stay Capture: PieceFrom<Target
       toAlg = algebraic(move.to) // Target square
       // Heroic prefix should reflect status of piece at 'from' before move
-      const approxHeroicBefore = this.isHeroic(move.from) ? '*' : '' // Approximation
+      const approxHeroicBefore = this.isHeroic(move.from) ? '+' : '' // Approximation
       san = `${approxHeroicBefore}${pieceChar}${fromAlg}<${toAlg}${heroicSuffix}`
     } else {
       // Normal Move/Capture: PieceFrom-To or PieceFromxTo
       toAlg = algebraic(move.to) // Destination square
       const separator = move.flags & BITS.CAPTURE ? 'x' : '-'
       // Heroic prefix should reflect status of piece at 'from' before move
-      const approxHeroicBefore = this.isHeroic(move.from) ? '*' : '' // Approximation
+      const approxHeroicBefore = this.isHeroic(move.from) ? '+' : '' // Approximation
       san = `${approxHeroicBefore}${pieceChar}${fromAlg}${separator}${toAlg}${heroicSuffix}`
     }
 
@@ -2035,7 +2034,7 @@ export class CoTuLenh {
         moveHistory.push(moveObj)
       } else {
         // Generate SAN for the state *before* the move was made
-        // Need to use the state *before* this move was made on the copy
+        // Need to use the state *before* this move for legality checks
         const tempGame = new CoTuLenh(FENHistory[FENHistory.length - 2]) // Load state before
         const movesForSAN = tempGame._moves({ legal: true }) // Get all legal moves in that state
         moveHistory.push(tempGame._moveToSan(internalMove, movesForSAN)) // Generate SAN

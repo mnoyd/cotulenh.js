@@ -161,7 +161,7 @@ describe('Heroic Piece Functionality', () => {
     // Check if SAN notation includes the heroic prefix (*)
     const firstMove = moves[0]
     expect(firstMove.san).toBeDefined()
-    expect(firstMove.san?.startsWith('*')).toBe(true)
+    expect(firstMove.san?.startsWith('+')).toBe(true)
   })
 
   test('Heroic status preserved in piece.heroic property', () => {
