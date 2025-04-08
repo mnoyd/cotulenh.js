@@ -6,6 +6,7 @@ import {
   Square, // Import Square type
   PieceSymbol, // Import PieceSymbol
   AIR_FORCE, // Import AIR_FORCE
+  MISSILE, // Import MISSILE
 } from '../src/cotulenh'
 
 // Simplified helper to check if a move exists in the verbose list
@@ -115,6 +116,140 @@ describe('Basic TANK Moves on Empty Board', () => {
   })
 
   // TODO: Add more Tank tests (corners, edges, near river)
+})
+
+describe('Basic MISSILE Moves on Empty Board', () => {
+  let game: CoTuLenh
+
+  beforeEach(() => {
+    game = new CoTuLenh()
+    game.clear()
+    game['_turn'] = RED // Set turn for the piece being tested
+  })
+
+  test('Missile basic moves from g3 (Land - middle)', () => {
+    const startSquare: Square = 'g3'
+    game.put({ type: MISSILE, color: RED }, startSquare)
+
+    // Use verbose moves as required by findMove helper
+    const moves = game.moves({
+      square: startSquare,
+      verbose: true,
+      ignoreSafety: true,
+    }) as Move[]
+    const actualDestinations = getDestinationSquares(moves)
+
+    // Missile moves in a circular pattern with radius 2
+    // - 2 steps in orthogonal directions
+    // - 1 step in diagonal directions
+
+    //prettier-ignore
+    const expectedDestinations: Square[] = [
+                'g5',
+          'f4', 'g4', 'h4',
+    'e3', 'f3',       'h3', 'i3',
+          'f2', 'g2', 'h2',
+                'g1',
+    ].sort();
+
+    // Check individual orthogonal moves (2 steps away)
+    expect(findMove(moves, startSquare, 'g5')).toBeDefined() // N (2 steps)
+    expect(findMove(moves, startSquare, 'i3')).toBeDefined() // E (2 steps)
+    expect(findMove(moves, startSquare, 'g1')).toBeDefined() // S (2 steps)
+    expect(findMove(moves, startSquare, 'e3')).toBeDefined() // W (2 steps)
+
+    // Check individual orthogonal moves (1 step away)
+    expect(findMove(moves, startSquare, 'g4')).toBeDefined() // N (1 step)
+    expect(findMove(moves, startSquare, 'g2')).toBeDefined() // E (1 step)
+    expect(findMove(moves, startSquare, 'h3')).toBeDefined() // S (1 step)
+    expect(findMove(moves, startSquare, 'f3')).toBeDefined() // W (1 step)
+
+    // Check individual diagonal moves (1 step only)
+    expect(findMove(moves, startSquare, 'f4')).toBeDefined() // NW (1 step)
+    expect(findMove(moves, startSquare, 'h4')).toBeDefined() // NE (1 step)
+    expect(findMove(moves, startSquare, 'h2')).toBeDefined() // SE (1 step)
+    expect(findMove(moves, startSquare, 'f2')).toBeDefined() // SW (1 step)
+
+    // Check the overall list of destinations matches expected
+    expect(moves).toHaveLength(expectedDestinations.length)
+    expect(actualDestinations).toEqual(expectedDestinations)
+  })
+
+  test('Missile move with obstacles', () => {
+    const startSquare: Square = 'g3'
+    game.put({ type: MISSILE, color: RED }, startSquare)
+
+    // Place a piece that blocks orthogonal movement in one direction
+    game.put({ type: TANK, color: RED }, 'g4') // Friendly piece blocks N direction
+
+    // Use verbose moves
+    const moves = game.moves({
+      square: startSquare,
+      verbose: true,
+      ignoreSafety: true,
+    }) as Move[]
+
+    //prettier-ignore
+    const expectedDestinations: Square[] = [
+            'f4',       'h4',
+      'e3', 'f3',       'h3', 'i3',
+            'f2', 'g2', 'h2',
+                  'g1',
+    ].sort()
+    const actualDestinations = getDestinationSquares(moves)
+
+    // With a piece at g3, the missile can't move to g5
+    expect(findMove(moves, startSquare, 'g5')).toBeUndefined()
+    expect(findMove(moves, startSquare, 'g4')).toBeUndefined()
+
+    // But it should still be able to move to other valid squares
+    // Check individual orthogonal moves (2 steps away)
+    expect(findMove(moves, startSquare, 'i3')).toBeDefined() // E (2 steps)
+    expect(findMove(moves, startSquare, 'g1')).toBeDefined() // S (2 steps)
+    expect(findMove(moves, startSquare, 'e3')).toBeDefined() // W (2 steps)
+
+    // Check individual orthogonal moves (1 step away)
+    expect(findMove(moves, startSquare, 'g2')).toBeDefined() // E (1 step)
+    expect(findMove(moves, startSquare, 'h3')).toBeDefined() // S (1 step)
+    expect(findMove(moves, startSquare, 'f3')).toBeDefined() // W (1 step)
+
+    // Check individual diagonal moves (1 step only)
+    expect(findMove(moves, startSquare, 'f4')).toBeDefined() // NW (1 step)
+    expect(findMove(moves, startSquare, 'h4')).toBeDefined() // NE (1 step)
+    expect(findMove(moves, startSquare, 'h2')).toBeDefined() // SE (1 step)
+    expect(findMove(moves, startSquare, 'f2')).toBeDefined() // SW (1 step)
+    // Check the overall list of destinations matches expected
+    expect(moves).toHaveLength(expectedDestinations.length)
+    expect(actualDestinations).toEqual(expectedDestinations)
+  })
+
+  test('Missile basic moves near the board edge', () => {
+    const startSquare: Square = 'c1'
+    game.put({ type: MISSILE, color: RED }, startSquare)
+
+    const moves = game.moves({
+      square: startSquare,
+      verbose: true,
+      ignoreSafety: true,
+    }) as Move[]
+
+    //prettier-ignore
+    const expectedDestinations: Square[] = [
+    'c3',
+    'c2', 'd2',
+          'd1', 'e1',
+    ].sort();
+    const actualDestinations = getDestinationSquares(moves)
+
+    // Test that the missile respects board boundaries
+    // Movements toward the edge should be limited
+    expect(findMove(moves, startSquare, 'c2')).toBeDefined() // W (1 step allowed)
+    expect(findMove(moves, startSquare, 'd1')).toBeDefined() // S (1 step allowed)
+
+    // Check the overall list of destinations matches expected
+    expect(moves).toHaveLength(expectedDestinations.length)
+    expect(actualDestinations).toEqual(expectedDestinations)
+  })
 })
 
 describe('Basic AIR_FORCE Moves on Empty Board', () => {
