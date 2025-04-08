@@ -45,15 +45,13 @@ describe('Basic TANK Moves on Empty Board', () => {
       ignoreSafety: true,
     }) as Move[]
 
+    //prettier-ignore
     const expectedDestinations: Square[] = [
-      'c4',
-      'd4',
-      'f4',
-      'g4',
-      'e2',
-      'e3',
-      'e5',
-      'e6',
+                'e6',
+                'e5',
+      'c4', 'd4',    'f4', 'g4',
+                'e3',
+                'e2',
     ].sort()
     const actualDestinations = getDestinationSquares(moves)
 
@@ -93,13 +91,13 @@ describe('Basic TANK Moves on Empty Board', () => {
       ignoreSafety: true,
     }) as Move[]
 
+    //prettier-ignore
     const expectedDestinations: Square[] = [
-      'c4',
-      'c5',
-      'c7',
       'c8',
-      'd6',
-      'e6',
+      'c7',
+            'd6', 'e6',
+      'c5',
+      'c4',
     ].sort()
     const actualDestinations = getDestinationSquares(moves)
 
@@ -212,7 +210,7 @@ describe('Basic AIR_FORCE Moves on Empty Board', () => {
           'c3',
 
           'c1', 'd1', 'e1',
-          ].sort();
+    ].sort();
 
     expectedDestinations.forEach((dest) => {
       expect(findMove(moves, startSquare, dest)).toBeDefined()
