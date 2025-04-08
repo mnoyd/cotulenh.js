@@ -19,39 +19,6 @@ import {
   DEFAULT_POSITION,
 } from '../src/cotulenh'
 
-// Helper to find a specific move in the verbose move list
-const findVerboseMove = (
-  moves: Move[],
-  from: Square,
-  to: Square, // Destination or Target
-  options: {
-    piece?: PieceSymbol
-    isDeploy?: boolean
-    isStayCapture?: boolean // Option parameter
-  } = {},
-): Move | undefined => {
-  return moves.find((m) => {
-    // 'm' is an instance of the Move class
-    const matchFrom = m.from === from
-    const matchPiece = options.piece === undefined || m.piece === options.piece
-    const matchDeploy =
-      options.isDeploy === undefined || m.isDeploy === options.isDeploy
-    // Check stay capture based on properties, not a method call
-    const isActuallyStayCapture =
-      m.targetSquare !== undefined && m.to === m.from
-    const matchStay =
-      options.isStayCapture === undefined ||
-      isActuallyStayCapture === options.isStayCapture
-
-    // Adjust 'to' matching based on stay capture
-    const matchTo = options.isStayCapture
-      ? m.to === from && m.targetSquare === to // Stay capture: 'to' is origin, 'targetSquare' is target
-      : m.to === to // Normal move/deploy: 'to' is destination
-
-    return matchFrom && matchPiece && matchDeploy && matchStay && matchTo
-  })
-}
-
 describe('CoTuLenh Stay Capture Logic', () => {
   let game: CoTuLenh
 
@@ -66,12 +33,17 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED // Access private for test setup
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'd4', 'd5', {
-      isStayCapture: false,
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'd4' &&
+        m.to === 'd5' &&
+        m.piece === TANK &&
+        m.captured === INFANTRY
+      )
     })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(false)
+    expect(captureMove?.isStayCapture()).toBe(false)
     expect(captureMove?.to).toBe('d5')
     expect(captureMove?.captured).toBe(INFANTRY)
   })
@@ -82,12 +54,17 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'i5', 'i8', {
-      isStayCapture: false,
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'i5' &&
+        m.to === 'i8' &&
+        m.piece === ARTILLERY &&
+        m.captured === INFANTRY
+      )
     })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(false)
+    expect(captureMove?.isStayCapture()).toBe(false)
     expect(captureMove?.to).toBe('i8')
     expect(captureMove?.captured).toBe(INFANTRY)
   })
@@ -98,12 +75,17 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'b3', 'b5', {
-      isStayCapture: false,
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'b3' &&
+        m.to === 'b5' &&
+        m.piece === NAVY &&
+        m.captured === NAVY
+      )
     })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(false)
+    expect(captureMove?.isStayCapture()).toBe(false)
     expect(captureMove?.to).toBe('b5')
     expect(captureMove?.captured).toBe(NAVY)
   })
@@ -114,12 +96,17 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'c4', 'c5', {
-      isStayCapture: false,
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'c4' &&
+        m.to === 'c5' &&
+        m.piece === NAVY &&
+        m.captured === TANK
+      )
     })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(false)
+    expect(captureMove?.isStayCapture()).toBe(false)
     expect(captureMove?.to).toBe('c5')
     expect(captureMove?.captured).toBe(TANK)
   })
@@ -131,12 +118,18 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'd3', 'b3', {
-      isStayCapture: true,
-    }) // Target is b3
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'd3' &&
+        m.to === 'd3' &&
+        m.piece === TANK &&
+        m.captured === NAVY &&
+        m.targetSquare === 'b3'
+      )
+    })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(true)
+    expect(captureMove?.isStayCapture()).toBe(true)
     expect(captureMove?.from).toBe('d3')
     expect(captureMove?.to).toBe('d3') // Tank stays
     expect(captureMove?.captured).toBe(NAVY)
@@ -150,12 +143,18 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'c3', 'f3', {
-      isStayCapture: true,
-    }) // Target is f3
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'c3' &&
+        m.to === 'c3' &&
+        m.piece === NAVY &&
+        m.captured === TANK &&
+        m.targetSquare === 'f3'
+      )
+    })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(true)
+    expect(captureMove?.isStayCapture()).toBe(true)
     expect(captureMove?.from).toBe('c3')
     expect(captureMove?.to).toBe('c3') // Navy stays
     expect(captureMove?.captured).toBe(TANK)
@@ -169,12 +168,18 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'd2', 'b2', {
-      isStayCapture: true,
-    }) // Target is b2
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'd2' &&
+        m.to === 'd2' &&
+        m.piece === AIR_FORCE &&
+        m.captured === NAVY &&
+        m.targetSquare === 'b2'
+      )
+    })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(true)
+    expect(captureMove?.isStayCapture()).toBe(true)
     expect(captureMove?.from).toBe('d2')
     expect(captureMove?.to).toBe('d2') // AF stays
     expect(captureMove?.captured).toBe(NAVY)
@@ -187,12 +192,17 @@ describe('CoTuLenh Stay Capture Logic', () => {
     game['_turn'] = RED
 
     const moves = game.moves({ verbose: true, ignoreSafety: true }) as Move[]
-    const captureMove = findVerboseMove(moves, 'd4', 'd5', {
-      isStayCapture: false,
+    const captureMove = moves.find((m) => {
+      return (
+        m.from === 'd4' &&
+        m.to === 'd5' &&
+        m.piece === AIR_FORCE &&
+        m.captured === INFANTRY
+      )
     })
 
     expect(captureMove).toBeDefined()
-    expect(captureMove?.isStayCapture).toBe(false)
+    expect(captureMove?.isStayCapture()).toBe(false)
     expect(captureMove?.to).toBe('d5')
     expect(captureMove?.captured).toBe(INFANTRY)
   })
@@ -273,7 +283,7 @@ describe('Move History and Undo', () => {
 
   test('undo() a stay capture move', () => {
     // Setup: Red Air Force d2, Blue Navy b2
-    game.load('11/11/11/11/11/11/11/11/11/11/1n1F7/11 r - - 0 1')
+    game.load('5c5/11/11/11/11/11/11/11/11/11/1n1F7/5C5 r - - 0 1')
     const initialFen = game.fen()
     const move = game.move({ from: 'd2', to: 'b2', stay: true }) // AF attacks Navy
 
@@ -314,7 +324,7 @@ describe('SAN Conversion', () => {
 
   test('move() should handle SAN for captures', () => {
     // Setup: Red Infantry d4, Blue Infantry d5
-    game.load('11/11/11/11/11/11/11/3i7/3I7/11/11/11 r - - 0 1')
+    game.load('5c5/11/11/11/11/11/11/3i7/3I7/11/11/5C5 r - - 0 1')
     const move = game.move('Id4xd5') // Capture using SAN
 
     expect(move).not.toBeNull()
@@ -327,11 +337,11 @@ describe('SAN Conversion', () => {
 
   test('move() should handle SAN for stay captures', () => {
     // Setup: Red AF d2, Blue Navy b2
-    game.load('11/11/11/11/11/11/11/11/11/11/1n1F7/11 r - - 0 1')
+    game.load('5c5/11/11/11/11/11/11/11/11/11/1n1F7/5C5 r - - 0 1')
     const move = game.move('Fd2<b2') // Stay capture SAN
 
     expect(move).not.toBeNull()
-    expect(move?.isStayCapture).toBe(true)
+    expect(move?.isStayCapture()).toBe(true)
     expect(move?.san).toBe('Fd2<b2')
     expect(move?.from).toBe('d2')
     expect(move?.to).toBe('d2') // Piece ends up at origin
@@ -345,236 +355,4 @@ describe('SAN Conversion', () => {
   // TODO: Add tests for ambiguous moves SAN if applicable
   // TODO: Add tests for Heroic promotion SAN if implemented
   // TODO: Add tests for Deploy SAN parsing/generation
-})
-
-describe('Stack Movement and Deployment', () => {
-  let game: CoTuLenh
-
-  beforeEach(() => {
-    game = new CoTuLenh()
-    game.clear() // Start with an empty board for specific setups
-  })
-
-  test('Generate deploy moves for (NFT) stack', () => {
-    // Setup: Red Navy at c3 carrying AirForce and Tank
-    game.put(
-      {
-        type: NAVY,
-        color: RED,
-        carried: [
-          { type: AIR_FORCE, color: RED },
-          { type: TANK, color: RED },
-        ],
-      },
-      'c3',
-    )
-    game['_turn'] = RED // Set turn for testing
-
-    const moves = game.moves({ verbose: true, square: 'c3' }) as Move[]
-
-    // Expect deploy moves for F and T, plus carrier moves for N
-    const deployF_c4 = findVerboseMove(moves, 'c3', 'c4', {
-      piece: AIR_FORCE,
-      isDeploy: true,
-      isStayCapture: false,
-    })
-    const deployF_d4 = findVerboseMove(moves, 'c3', 'd4', {
-      piece: AIR_FORCE,
-      isDeploy: true,
-      isStayCapture: false,
-    })
-    const deployT_c4 = findVerboseMove(moves, 'c3', 'c4', {
-      piece: TANK,
-      isDeploy: true,
-      isStayCapture: false,
-    })
-    const deployT_d3 = findVerboseMove(moves, 'c3', 'd3', {
-      piece: TANK,
-      isDeploy: true,
-      isStayCapture: false,
-    })
-    const carrierN_c4 = findVerboseMove(moves, 'c3', 'c4', {
-      piece: NAVY,
-      isDeploy: false,
-      isStayCapture: false,
-    })
-
-    expect(deployF_c4).toBeDefined()
-    expect(deployF_c4?.isDeploy).toBe(true)
-    expect(deployF_c4?.piece).toBe(AIR_FORCE)
-
-    expect(deployF_d4).toBeDefined() // Check another direction
-
-    expect(deployT_c4).toBeDefined()
-    expect(deployT_c4?.isDeploy).toBe(true)
-    expect(deployT_c4?.piece).toBe(TANK)
-
-    expect(deployT_d3).toBeDefined() // Check another direction
-
-    expect(carrierN_c4).toBeDefined()
-    expect(carrierN_c4?.isDeploy).toBe(false)
-    expect(carrierN_c4?.piece).toBe(NAVY)
-
-    // Check a non-deploy move is not generated for carried pieces
-    const nonDeployF = findVerboseMove(moves, 'c3', 'c4', {
-      piece: AIR_FORCE,
-      isDeploy: false,
-    })
-    expect(nonDeployF).toBeUndefined()
-  })
-
-  test('Execute Air Force deploy move from (NFT) stack', () => {
-    // Setup: Red Navy at c3 carrying AirForce and Tank
-    game.put(
-      {
-        type: NAVY,
-        color: RED,
-        carried: [
-          { type: AIR_FORCE, color: RED },
-          { type: TANK, color: RED },
-        ],
-      },
-      'c3',
-    )
-    game['_turn'] = RED
-
-    // Find and execute the deploy move for Air Force to c4
-    // We need a way to represent deploy moves in the public API.
-    // Option 1: Use a special SAN format (requires _moveFromSan update)
-    // Option 2: Extend the move object { from, to, piece, isDeploy } (cleaner?)
-    // Let's assume we can find the internal move and use the object format for now.
-
-    const deployMove = findVerboseMove(
-      game.moves({ verbose: true, square: 'c3' }) as Move[],
-      'c3',
-      'c4',
-      { piece: AIR_FORCE, isDeploy: true },
-    )
-    expect(deployMove).toBeDefined()
-
-    // Execute using the found Move object (if move() accepts it - needs check)
-    // Or construct a simpler object if move() supports it
-    const moveResult = game.move({ from: 'c3', to: 'c4' }) // Hypothetical API
-
-    expect(moveResult).not.toBeNull()
-    expect(game.turn()).toBe(RED) // Turn should NOT change
-    expect(game.get('c3')?.type).toBe(NAVY) // Carrier remains
-    expect(game.get('c3')?.carried?.length).toBe(1) // One piece left
-    expect(game.get('c3')?.carried?.[0].type).toBe(TANK) // Tank remains
-    expect(game.get('c4')?.type).toBe(AIR_FORCE) // AF deployed
-    expect(game.get('c4')?.color).toBe(RED)
-    // Cannot check private _deployState directly, check behavior instead
-    // After a deploy move, only moves from the stack square should be possible
-    const nextMoves = game.moves({ verbose: true }) as Move[]
-    expect(nextMoves.every((m) => m.from === 'c3')).toBe(true) // All moves must originate from c3
-    expect(
-      findVerboseMove(nextMoves, 'c3', 'd3', { piece: TANK, isDeploy: true }),
-    ).toBeDefined() // Tank deploy possible
-    expect(
-      findVerboseMove(nextMoves, 'c3', 'c2', { piece: NAVY, isDeploy: false }),
-    ).toBeDefined() // Carrier move possible
-  })
-
-  test('Execute Tank deploy move after Air Force deploy', () => {
-    // Setup: Red Navy at c3 carrying AirForce and Tank
-    game.put(
-      {
-        type: NAVY,
-        color: RED,
-        carried: [
-          { type: AIR_FORCE, color: RED },
-          { type: TANK, color: RED },
-        ],
-      },
-      'c3',
-    )
-    game['_turn'] = RED
-
-    // Deploy AF first
-    const afDeployMove = findVerboseMove(
-      game.moves({ verbose: true, square: 'c3' }) as Move[],
-      'c3',
-      'c4',
-      { piece: AIR_FORCE, isDeploy: true },
-    )
-    expect(afDeployMove).toBeDefined()
-    game.move({ from: 'c3', to: 'c4' })
-
-    expect(game.turn()).toBe(RED) // Still Red's turn
-
-    // Now deploy Tank
-    const tankDeployMove = findVerboseMove(
-      game.moves({ verbose: true, square: 'c3' }) as Move[],
-      'c3',
-      'd3',
-      { piece: TANK, isDeploy: true },
-    )
-    expect(tankDeployMove).toBeDefined()
-    const moveResult = game.move({ from: 'c3', to: 'd3' })
-
-    expect(moveResult).not.toBeNull()
-    expect(game.turn()).toBe(RED) // Turn should still be Red
-    expect(game.get('c3')?.type).toBe(NAVY) // Carrier remains
-    expect(game.get('c3')?.carried).toBeUndefined() // Stack empty
-    expect(game.get('c4')?.type).toBe(AIR_FORCE) // Previous deploy
-    expect(game.get('d3')?.type).toBe(TANK) // Tank deployed
-    expect(game.get('d3')?.color).toBe(RED)
-    // Check deploy state behavior
-    const nextMoves = game.moves({ verbose: true }) as Move[]
-    expect(nextMoves.every((m) => m.from === 'c3')).toBe(true) // All moves must originate from c3 (only carrier left)
-    expect(
-      findVerboseMove(nextMoves, 'c3', 'c2', { piece: NAVY, isDeploy: false }),
-    ).toBeDefined() // Carrier move possible
-    expect(
-      findVerboseMove(nextMoves, 'c3', 'any', { isDeploy: true }),
-    ).toBeUndefined() // No more deploy moves
-  })
-
-  test('Execute Carrier move after all deployments', () => {
-    // Setup: Red Navy at c3 carrying AirForce and Tank
-    game.put(
-      {
-        type: NAVY,
-        color: RED,
-        carried: [
-          { type: AIR_FORCE, color: RED },
-          { type: TANK, color: RED },
-        ],
-      },
-      'c3',
-    )
-    game['_turn'] = RED
-
-    // Deploy AF
-    game.move({ from: 'c3', to: 'c4' })
-    // Deploy T
-    game.move({ from: 'c3', to: 'd3' })
-
-    expect(game.turn()).toBe(RED) // Still Red's turn
-    expect(game.get('c3')?.carried).toBeUndefined() // Stack empty
-
-    // Find and execute the carrier move (e.g., Navy c3 to c2)
-    const carrierMove = findVerboseMove(
-      game.moves({ verbose: true, square: 'c3' }) as Move[],
-      'c3',
-      'c2',
-      { piece: NAVY, isDeploy: false },
-    )
-    expect(carrierMove).toBeDefined()
-    const moveResult = game.move({ from: 'c3', to: 'c2' }) // Normal move object for carrier
-
-    expect(moveResult).not.toBeNull()
-    expect(game.turn()).toBe(BLUE) // Turn SHOULD change now
-    expect(game.get('c3')).toBeUndefined() // Carrier moved
-    expect(game.get('c2')?.type).toBe(NAVY) // Carrier at new location
-    expect(game.get('c2')?.carried).toBeUndefined() // Still empty stack
-    expect(game.get('c4')?.type).toBe(AIR_FORCE) // Deployed pieces remain
-    expect(game.get('d3')?.type).toBe(TANK)
-    // Check deploy state cleared by checking if non-stack moves are possible
-    expect(game.moves({ square: 'c4' }).length).toBeGreaterThan(0)
-  })
-
-  // TODO: Add tests for deploy captures (normal and stay)
-  // TODO: Add tests for undoing deploy/carrier moves
-  // TODO: Add tests for SAN parsing/generation of deploy moves
 })

@@ -838,29 +838,30 @@ export class CoTuLenh {
           )
 
           // --- Terrain Blocking Check (Movement Only) ---
-          if (!moveIgnoresBlocking) {
-            // Rely on the flag now
-            if (pieceType === NAVY) {
-              // Navy can only MOVE onto NAVY_MASK squares
-              if (!NAVY_MASK[to]) {
-                terrainBlockedMovement = true
-              }
-            } else if (LAND_MASK[from]) {
-              // Assuming non-Navy are land pieces for this check
-              // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
-              if (!LAND_MASK[to]) {
-                terrainBlockedMovement = true
-              }
-              // Heavy piece river crossing rule (Movement Only)
-              if (isHeavyPiece && !terrainBlockedMovement) {
-                const zoneFrom = this.isHeavyZone(from)
-                const zoneTo = this.isHeavyZone(to)
-                if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
-                  const isCrossingBridge = this.isBridgeCrossing(from, to)
-                  if (!isCrossingBridge) {
-                    // Cannot cross river unless via bridge (movement)
-                    terrainBlockedMovement = true
-                  }
+          // Rely on the flag now
+          if (pieceType === NAVY) {
+            // Navy can only MOVE onto NAVY_MASK squares
+            if (!NAVY_MASK[to]) {
+              terrainBlockedMovement = true
+            }
+          } else {
+            // Assuming non-Navy are land pieces for this check
+            // Land pieces cannot MOVE onto non-LAND_MASK squares (pure water)
+            if (!LAND_MASK[to]) {
+              terrainBlockedMovement = true
+            } else if (pieceType === AIR_FORCE) {
+              // Air Force is land piece but it flies over water as long as the destination is land.
+              terrainBlockedMovement = false
+            }
+            // Heavy piece river crossing rule (Movement Only)
+            if (isHeavyPiece && !terrainBlockedMovement) {
+              const zoneFrom = this.isHeavyZone(from)
+              const zoneTo = this.isHeavyZone(to)
+              if (zoneFrom !== 0 && zoneTo !== 0 && zoneFrom !== zoneTo) {
+                const isCrossingBridge = this.isBridgeCrossing(from, to)
+                if (!isCrossingBridge) {
+                  // Cannot cross river unless via bridge (movement)
+                  terrainBlockedMovement = true
                 }
               }
             }
